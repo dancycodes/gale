@@ -1,0 +1,706 @@
+<?php
+
+namespace Dancycodes\Gale\Tests\Unit\Http;
+
+use Dancycodes\Gale\Http\GaleRedirect;
+use Dancycodes\Gale\Http\GaleResponse;
+use Dancycodes\Gale\Tests\TestCase;
+
+/**
+ * Test the GaleRedirect class
+ *
+ * @see TESTING.md - File 3: GaleRedirect Tests
+ * Status: 🔄 IN PROGRESS - 8 test methods
+ */
+class GaleRedirectTest extends TestCase
+{
+    public static $latestResponse;
+
+    /**
+     * Set up a fake Gale request
+     */
+    protected function setupGaleRequest(): void
+    {
+        request()->headers->set('Gale-Request', 'true');
+    }
+
+    /** @test */
+    public function test_redirect_creates_instance()
+    {
+        $this->setupGaleRequest();
+
+        $hyperResponse = app(GaleResponse::class);
+        $redirect = new GaleRedirect('/dashboard', $hyperResponse);
+
+        $this->assertInstanceOf(GaleRedirect::class, $redirect);
+    }
+
+    /** @test */
+    public function test_redirect_sets_correct_url()
+    {
+        $this->setupGaleRequest();
+
+        $targetUrl = '/users/profile';
+        $hyperResponse = app(GaleResponse::class);
+        $redirect = new GaleRedirect($targetUrl, $hyperResponse);
+
+        // Convert to response and check the generated JavaScript
+        $response = $redirect->toResponse(request());
+
+        $this->assertInstanceOf(\Symfony\Component\HttpFoundation\StreamedResponse::class, $response);
+
+        // Get SSE events
+        $events = $this->getSSEEvents($response);
+
+        // Should have a script execution event
+        $this->assertGreaterThan(0, count($events));
+
+        // Verify the URL is in the JavaScript
+        $hasUrlInScript = false;
+        foreach ($events as $event) {
+            if (isset($event['data']) && str_contains($event['data'], $targetUrl)) {
+                $hasUrlInScript = true;
+                break;
+            }
+        }
+
+        $this->assertTrue($hasUrlInScript, "Target URL '{$targetUrl}' should be in the redirect script");
+    }
+
+    /** @test */
+    public function test_redirect_executes_javascript_window_location()
+    {
+        $this->setupGaleRequest();
+
+        $hyperResponse = app(GaleResponse::class);
+        $redirect = new GaleRedirect('/dashboard', $hyperResponse);
+
+        $response = $redirect->toResponse(request());
+        $events = $this->getSSEEvents($response);
+
+        // Should generate JavaScript with window.location
+        $hasWindowLocation = false;
+        foreach ($events as $event) {
+            if (isset($event['data']) && str_contains($event['data'], 'window.location')) {
+                $hasWindowLocation = true;
+                break;
+            }
+        }
+
+        $this->assertTrue($hasWindowLocation, 'Redirect should use window.location');
+    }
+
+    /** @test */
+    public function test_with_method_flashes_data()
+    {
+        $this->setupGaleRequest();
+
+        $hyperResponse = app(GaleResponse::class);
+        $redirect = new GaleRedirect('/dashboard', $hyperResponse);
+
+        // Flash data using with()
+        $redirect->with('success', 'Profile updated successfully!');
+        $redirect->with('user_id', 123);
+
+        // Execute redirect (which flashes to session)
+        $response = $redirect->toResponse(request());
+
+        // Verify data was flashed to session
+        $this->assertTrue(session()->has('success'));
+        $this->assertTrue(session()->has('user_id'));
+        $this->assertEquals('Profile updated successfully!', session()->get('success'));
+        $this->assertEquals(123, session()->get('user_id'));
+    }
+
+    /** @test */
+    public function test_with_method_chains_correctly()
+    {
+        $this->setupGaleRequest();
+
+        $hyperResponse = app(GaleResponse::class);
+        $redirect = new GaleRedirect('/dashboard', $hyperResponse);
+
+        // Test method chaining
+        $result = $redirect
+            ->with('message', 'Hello')
+            ->with('status', 'success');
+
+        $this->assertInstanceOf(GaleRedirect::class, $result);
+
+        // Execute and verify both flash data items
+        $response = $result->toResponse(request());
+
+        $this->assertTrue(session()->has('message'));
+        $this->assertTrue(session()->has('status'));
+        $this->assertEquals('Hello', session()->get('message'));
+        $this->assertEquals('success', session()->get('status'));
+    }
+
+    /** @test */
+    public function test_redirect_returns_hyper_response_instance()
+    {
+        $this->setupGaleRequest();
+
+        $hyperResponse = app(GaleResponse::class);
+        $redirect = new GaleRedirect('/dashboard', $hyperResponse);
+
+        $response = $redirect->toResponse(request());
+
+        // Should return a StreamedResponse (which is what GaleResponse generates)
+        $this->assertInstanceOf(\Symfony\Component\HttpFoundation\StreamedResponse::class, $response);
+    }
+
+    /** @test */
+    public function test_redirect_can_chain_other_methods()
+    {
+        $this->setupGaleRequest();
+
+        $hyperResponse = app(GaleResponse::class);
+        $redirect = new GaleRedirect('/dashboard', $hyperResponse);
+
+        // Test chaining multiple methods
+        $result = $redirect
+            ->with('success', 'Saved!')
+            ->with(['count' => 5, 'total' => 10]);
+
+        $this->assertInstanceOf(GaleRedirect::class, $result);
+
+        // Execute redirect
+        $response = $result->toResponse(request());
+
+        // Verify all flash data
+        $this->assertEquals('Saved!', session()->get('success'));
+        $this->assertEquals(5, session()->get('count'));
+        $this->assertEquals(10, session()->get('total'));
+    }
+
+    /** @test */
+    public function test_redirect_escapes_url_correctly()
+    {
+        $this->setupGaleRequest();
+
+        // URL with special characters
+        $urlWithSpecialChars = '/search?query=test&category=news';
+
+        $hyperResponse = app(GaleResponse::class);
+        $redirect = new GaleRedirect($urlWithSpecialChars, $hyperResponse);
+
+        $response = $redirect->toResponse(request());
+        $events = $this->getSSEEvents($response);
+
+        // Verify URL is properly escaped in JavaScript
+        $hasEscapedUrl = false;
+        foreach ($events as $event) {
+            if (isset($event['data'])) {
+                // The URL should be JSON-encoded, so & becomes part of the string
+                if (str_contains($event['data'], 'window.location')) {
+                    $hasEscapedUrl = true;
+                    // Verify it's properly escaped (should not have unescaped special chars)
+                    $this->assertStringNotContainsString('<script>', $event['data']);
+                    break;
+                }
+            }
+        }
+
+        $this->assertTrue($hasEscapedUrl, 'URL should be safely escaped in JavaScript');
+    }
+
+    /** @test */
+    public function test_with_method_accepts_array()
+    {
+        $this->setupGaleRequest();
+
+        $hyperResponse = app(GaleResponse::class);
+        $redirect = new GaleRedirect('/dashboard', $hyperResponse);
+
+        // Flash array of data
+        $flashData = [
+            'message' => 'Success',
+            'type' => 'info',
+            'count' => 42,
+        ];
+
+        $redirect->with($flashData);
+        $response = $redirect->toResponse(request());
+
+        // Verify all array items were flashed
+        $this->assertEquals('Success', session()->get('message'));
+        $this->assertEquals('info', session()->get('type'));
+        $this->assertEquals(42, session()->get('count'));
+    }
+
+    /** @test */
+    public function test_with_input_method_flashes_input()
+    {
+        $this->setupGaleRequest();
+
+        // Set up request input
+        request()->merge([
+            'name' => 'John Doe',
+            'email' => 'john@example.com',
+            'age' => 30,
+        ]);
+
+        $hyperResponse = app(GaleResponse::class);
+        $redirect = new GaleRedirect('/dashboard', $hyperResponse);
+
+        // Flash input
+        $redirect->withInput();
+        $response = $redirect->toResponse(request());
+
+        // Verify old input was flashed
+        $this->assertTrue(session()->has('_old_input'));
+        $oldInput = session()->get('_old_input');
+        $this->assertIsArray($oldInput);
+        $this->assertArrayHasKey('name', $oldInput);
+        $this->assertArrayHasKey('email', $oldInput);
+        $this->assertEquals('John Doe', $oldInput['name']);
+        $this->assertEquals('john@example.com', $oldInput['email']);
+    }
+
+    /** @test */
+    public function test_with_errors_method_flashes_errors()
+    {
+        $this->setupGaleRequest();
+
+        $errors = [
+            'email' => ['The email field is required.'],
+            'password' => ['The password must be at least 8 characters.'],
+        ];
+
+        $hyperResponse = app(GaleResponse::class);
+        $redirect = new GaleRedirect('/login', $hyperResponse);
+
+        // Flash errors
+        $redirect->withErrors($errors);
+        $response = $redirect->toResponse(request());
+
+        // Verify errors were flashed
+        $this->assertTrue(session()->has('errors'));
+        $flashedErrors = session()->get('errors');
+        $this->assertEquals($errors, $flashedErrors);
+    }
+
+    /** @test */
+    public function test_back_method_redirects_to_previous_url()
+    {
+        $this->setupGaleRequest();
+
+        // Simulate a previous URL
+        $previousUrl = 'http://localhost/previous-page';
+        request()->headers->set('referer', $previousUrl);
+
+        // Mock url()->previous() by setting up the URL in session
+        session()->put('_previous.url', $previousUrl);
+
+        $hyperResponse = app(GaleResponse::class);
+        $redirect = new GaleRedirect('/ignored', $hyperResponse);
+
+        // Call back() which should change the redirect URL
+        $redirect->back();
+
+        $response = $redirect->toResponse(request());
+        $events = $this->getSSEEvents($response);
+
+        // Verify the previous URL is used
+        $hasePreviousUrl = false;
+        foreach ($events as $event) {
+            if (isset($event['data']) && str_contains($event['data'], 'previous-page')) {
+                $hasPreviousUrl = true;
+                break;
+            }
+        }
+
+        $this->assertTrue($hasPreviousUrl, 'Should redirect to previous URL');
+    }
+
+    /** @test */
+    public function test_back_method_uses_fallback_when_no_previous()
+    {
+        $this->setupGaleRequest();
+
+        // Clear any previous URL
+        session()->forget('_previous.url');
+
+        $hyperResponse = app(GaleResponse::class);
+        $redirect = new GaleRedirect('/ignored', $hyperResponse);
+
+        // Call back() with fallback
+        $redirect->back('/fallback-url');
+
+        $response = $redirect->toResponse(request());
+        $events = $this->getSSEEvents($response);
+
+        // Verify fallback is used
+        $hasFallback = false;
+        foreach ($events as $event) {
+            if (isset($event['data']) && str_contains($event['data'], 'fallback')) {
+                $hasFallback = true;
+                break;
+            }
+        }
+
+        $this->assertTrue($hasFallback, 'Should use fallback URL when no previous URL');
+    }
+
+    /** @test */
+    public function test_route_method_redirects_to_named_route()
+    {
+        $this->setupGaleRequest();
+
+        // Define a test route
+        \Illuminate\Support\Facades\Route::get('/test-route', function () {
+            return 'test';
+        })->name('test.route');
+
+        $hyperResponse = app(GaleResponse::class);
+        $redirect = new GaleRedirect('/ignored', $hyperResponse);
+
+        // Redirect to named route
+        $redirect->route('test.route');
+
+        $response = $redirect->toResponse(request());
+        $events = $this->getSSEEvents($response);
+
+        // Verify the route URL is used
+        $hasRouteUrl = false;
+        foreach ($events as $event) {
+            if (isset($event['data']) && str_contains($event['data'], 'test-route')) {
+                $hasRouteUrl = true;
+                break;
+            }
+        }
+
+        $this->assertTrue($hasRouteUrl, 'Should redirect to named route URL');
+    }
+
+    /** @test */
+    public function test_route_method_throws_exception_for_invalid_route()
+    {
+        $this->setupGaleRequest();
+
+        $hyperResponse = app(GaleResponse::class);
+        $redirect = new GaleRedirect('/ignored', $hyperResponse);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage("Route 'non.existent.route' does not exist");
+
+        // Try to redirect to non-existent route
+        $redirect->route('non.existent.route');
+    }
+
+    /** @test */
+    public function test_home_method_redirects_to_root()
+    {
+        $this->setupGaleRequest();
+
+        $hyperResponse = app(GaleResponse::class);
+        $redirect = new GaleRedirect('/ignored', $hyperResponse);
+
+        // Redirect to home
+        $redirect->home();
+
+        $response = $redirect->toResponse(request());
+        $events = $this->getSSEEvents($response);
+
+        // Verify redirect to root URL
+        $hasRootUrl = false;
+        foreach ($events as $event) {
+            if (isset($event['data'])) {
+                // Should contain localhost or the base URL
+                if (str_contains($event['data'], 'window.location') &&
+                    (str_contains($event['data'], 'localhost') || str_contains($event['data'], '\\/'))) {
+                    $hasRootUrl = true;
+                    break;
+                }
+            }
+        }
+
+        $this->assertTrue($hasRootUrl, 'Should redirect to home/root URL');
+    }
+
+    /** @test */
+    public function test_refresh_method_reloads_current_page()
+    {
+        $this->setupGaleRequest();
+
+        // Set current URL
+        request()->server->set('REQUEST_URI', '/current-page?foo=bar');
+
+        $hyperResponse = app(GaleResponse::class);
+        $redirect = new GaleRedirect('/ignored', $hyperResponse);
+
+        // Refresh current page
+        $redirect->refresh();
+
+        $response = $redirect->toResponse(request());
+        $events = $this->getSSEEvents($response);
+
+        // Verify current page URL is used
+        $hasCurrentUrl = false;
+        foreach ($events as $event) {
+            if (isset($event['data']) && str_contains($event['data'], 'window.location')) {
+                $hasCurrentUrl = true;
+                break;
+            }
+        }
+
+        $this->assertTrue($hasCurrentUrl, 'Should refresh current page');
+    }
+
+    /** @test */
+    public function test_intended_method_redirects_to_intended_url()
+    {
+        $this->setupGaleRequest();
+
+        // Set intended URL in session (must be full URL for domain security check)
+        $intendedUrl = 'http://localhost/protected-page';
+        session()->put('url.intended', $intendedUrl);
+
+        $hyperResponse = app(GaleResponse::class);
+        $redirect = new GaleRedirect('/ignored', $hyperResponse);
+
+        // Redirect to intended URL
+        $redirect->intended('/default');
+
+        $response = $redirect->toResponse(request());
+        $events = $this->getSSEEvents($response);
+
+        // Verify intended URL is used
+        $hasIntendedUrl = false;
+        foreach ($events as $event) {
+            if (isset($event['data']) && str_contains($event['data'], 'protected-page')) {
+                $hasIntendedUrl = true;
+                break;
+            }
+        }
+
+        $this->assertTrue($hasIntendedUrl, 'Should redirect to intended URL');
+
+        // Verify intended URL was removed from session (pulled)
+        $this->assertFalse(session()->has('url.intended'));
+    }
+
+    /** @test */
+    public function test_intended_method_uses_default_when_no_intended()
+    {
+        $this->setupGaleRequest();
+
+        // Clear intended URL
+        session()->forget('url.intended');
+
+        $hyperResponse = app(GaleResponse::class);
+        $redirect = new GaleRedirect('/ignored', $hyperResponse);
+
+        // Redirect to intended with default
+        $redirect->intended('/default-page');
+
+        $response = $redirect->toResponse(request());
+        $events = $this->getSSEEvents($response);
+
+        // Verify default URL is used
+        $hasDefaultUrl = false;
+        foreach ($events as $event) {
+            if (isset($event['data']) && str_contains($event['data'], 'default-page')) {
+                $hasDefaultUrl = true;
+                break;
+            }
+        }
+
+        $this->assertTrue($hasDefaultUrl, 'Should use default URL when no intended URL exists');
+    }
+
+    /** @test */
+    public function test_force_reload_method_reloads_page()
+    {
+        $this->setupGaleRequest();
+
+        $hyperResponse = app(GaleResponse::class);
+        $redirect = new GaleRedirect('/ignored', $hyperResponse);
+
+        // BUG FIXED: forceReload() now correctly returns StreamedResponse (return type: mixed)
+        // Previously declared incorrect return type causing TypeError
+        $response = $redirect->forceReload(true);
+
+        // Verify it returns a StreamedResponse
+        $this->assertInstanceOf(\Symfony\Component\HttpFoundation\StreamedResponse::class, $response);
+
+        // Verify the reload script is generated
+        $events = $this->getSSEEvents($response);
+        $hasReloadScript = false;
+        foreach ($events as $event) {
+            if (isset($event['data']) && str_contains($event['data'], 'window.location.reload')) {
+                $hasReloadScript = true;
+                break;
+            }
+        }
+
+        $this->assertTrue($hasReloadScript, 'Should generate window.location.reload script');
+    }
+
+    /** @test */
+    public function test_with_method_sets_flash_data()
+    {
+        $this->setupGaleRequest();
+
+        $hyperResponse = app(GaleResponse::class);
+        $redirect = new GaleRedirect('/dashboard', $hyperResponse);
+
+        // Set flash data
+        $redirect->with('success', 'Operation completed successfully');
+
+        $response = $redirect->toResponse(request());
+
+        // Verify flash data was set and reflashed
+        $this->assertNotNull(session()->get('_flash.new'));
+        $this->assertContains('success', session()->get('_flash.new'));
+    }
+
+    /** @test */
+    public function test_with_method_sets_multiple_flash_data()
+    {
+        $this->setupGaleRequest();
+
+        $hyperResponse = app(GaleResponse::class);
+        $redirect = new GaleRedirect('/dashboard', $hyperResponse);
+
+        // Set multiple flash data
+        $redirect->with([
+            'success' => 'Item created',
+            'item_id' => 123,
+            'metadata' => ['count' => 5],
+        ]);
+
+        $response = $redirect->toResponse(request());
+
+        // Verify all flash data was set
+        $flashNew = session()->get('_flash.new', []);
+        $this->assertContains('success', $flashNew);
+        $this->assertContains('item_id', $flashNew);
+        $this->assertContains('metadata', $flashNew);
+    }
+
+    /** @test */
+    public function test_flash_data_is_reflashed_after_save()
+    {
+        $this->setupGaleRequest();
+
+        $hyperResponse = app(GaleResponse::class);
+        $redirect = new GaleRedirect('/dashboard', $hyperResponse);
+
+        $redirect->with('test', 'value');
+
+        // Call toResponse which will flash, save, and reflash
+        $response = $redirect->toResponse(request());
+
+        // After toResponse with reflash(), flash data should be in new (reflashed after save)
+        $flashAfter = session()->get('_flash.new', []);
+        $this->assertContains('test', $flashAfter);
+
+        // Verify the actual value is still accessible
+        $this->assertEquals('value', session()->get('test'));
+    }
+
+    /** @test */
+    public function test_force_reload_preserves_flash_data()
+    {
+        $this->setupGaleRequest();
+
+        $hyperResponse = app(GaleResponse::class);
+        $redirect = new GaleRedirect('/ignored', $hyperResponse);
+
+        $redirect->with('reload_message', 'Page will reload with this message');
+
+        $response = $redirect->forceReload(true);
+
+        // Verify flash data was reflashed
+        $flashNew = session()->get('_flash.new', []);
+        $this->assertContains('reload_message', $flashNew);
+    }
+
+    /** @test */
+    public function test_session_save_is_called_before_reflash()
+    {
+        $this->setupGaleRequest();
+
+        $hyperResponse = app(GaleResponse::class);
+        $redirect = new GaleRedirect('/target', $hyperResponse);
+
+        $redirect->with('test_key', 'test_value');
+
+        // Capture session state before toResponse
+        $sessionIdBefore = session()->getId();
+
+        $response = $redirect->toResponse(request());
+
+        // Session should still be active (not closed) with same ID
+        $this->assertEquals($sessionIdBefore, session()->getId());
+
+        // Flash data should be in _flash.new after reflash
+        $this->assertContains('test_key', session()->get('_flash.new', []));
+    }
+
+    /** @test */
+    public function test_empty_flash_data_does_not_call_session_operations()
+    {
+        $this->setupGaleRequest();
+
+        $hyperResponse = app(GaleResponse::class);
+        $redirect = new GaleRedirect('/target', $hyperResponse);
+
+        // Don't set any flash data
+        $response = $redirect->toResponse(request());
+
+        // Should still generate valid SSE response
+        $this->assertInstanceOf(\Symfony\Component\HttpFoundation\StreamedResponse::class, $response);
+    }
+
+    /** @test */
+    public function test_flash_data_persists_through_dual_save_cycle()
+    {
+        $this->setupGaleRequest();
+
+        $hyperResponse = app(GaleResponse::class);
+        $redirect = new GaleRedirect('/dashboard', $hyperResponse);
+
+        $redirect->with('message', 'Test persistence');
+
+        // First save happens in toResponse
+        $response = $redirect->toResponse(request());
+
+        // Verify data is in _flash.new (reflashed after save)
+        $flashKeys = session()->get('_flash.new', []);
+        $this->assertContains('message', $flashKeys);
+
+        // Simulate StartSession middleware's terminate() save
+        session()->save();
+
+        // After terminate's save, data should be in _flash.old (aged correctly)
+        $flashOldKeys = session()->get('_flash.old', []);
+        $this->assertContains('message', $flashOldKeys);
+
+        // And the actual value should still be accessible
+        $this->assertEquals('Test persistence', session()->get('message'));
+    }
+
+    /** @test */
+    public function test_multiple_with_calls_accumulate_flash_data()
+    {
+        $this->setupGaleRequest();
+
+        $hyperResponse = app(GaleResponse::class);
+        $redirect = new GaleRedirect('/target', $hyperResponse);
+
+        $redirect
+            ->with('first', 'value1')
+            ->with('second', 'value2')
+            ->with('third', 'value3');
+
+        $response = $redirect->toResponse(request());
+
+        $flashKeys = session()->get('_flash.new', []);
+        $this->assertContains('first', $flashKeys);
+        $this->assertContains('second', $flashKeys);
+        $this->assertContains('third', $flashKeys);
+    }
+}
