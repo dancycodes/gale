@@ -48,7 +48,7 @@ class ResponseMacrosTest extends TestCase
                 $executed = true;
             }
 
-            return $hyper->signals(['test' => 'value']);
+            return $hyper->state(['test' => 'value']);
         });
         // Make a Gale request to the route
         $this->call('GET', '/test-response-macro', [], [], [], [

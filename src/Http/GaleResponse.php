@@ -48,6 +48,21 @@ class GaleResponse implements Responsable
     protected $webResponse = null;
 
     /**
+     * Tracks whether URL has been set for current response (prevents multiple navigate calls)
+     */
+    protected bool $urlSet = false;
+
+    /**
+     * SSE event ID for replay support (optional)
+     */
+    protected ?string $eventId = null;
+
+    /**
+     * SSE retry duration in milliseconds (optional, default is 1000ms per SSE spec)
+     */
+    protected ?int $retryDuration = null;
+
+    /**
      * Reset the response builder state for reuse
      *
      * Clears all accumulated events and resets flags to their initial state.
@@ -59,6 +74,9 @@ class GaleResponse implements Responsable
         $this->streamingMode = false;
         $this->streamCallback = null;
         $this->webResponse = null;
+        $this->urlSet = false;
+        $this->eventId = null;
+        $this->retryDuration = null;
     }
 
     /**
@@ -85,6 +103,42 @@ class GaleResponse implements Responsable
         }
 
         return $headers;
+    }
+
+    /**
+     * Set SSE event ID for replay support
+     *
+     * The event ID is sent with each SSE event and allows clients to resume
+     * from a specific point if the connection is lost. The browser will send
+     * the last event ID in the Last-Event-ID header when reconnecting.
+     *
+     * @param string $id Unique identifier for the event
+     *
+     * @return static Returns this instance for method chaining
+     */
+    public function withEventId(string $id): self
+    {
+        $this->eventId = $id;
+
+        return $this;
+    }
+
+    /**
+     * Set SSE retry duration for reconnection
+     *
+     * Specifies the reconnection time in milliseconds that the browser should
+     * wait before attempting to reconnect after the connection is lost.
+     * Default per SSE spec is 1000ms (1 second).
+     *
+     * @param int $milliseconds Reconnection time in milliseconds
+     *
+     * @return static Returns this instance for method chaining
+     */
+    public function withRetry(int $milliseconds): self
+    {
+        $this->retryDuration = $milliseconds;
+
+        return $this;
     }
 
     /**
@@ -179,24 +233,6 @@ class GaleResponse implements Responsable
     }
 
     /**
-     * Render a Blade partial view and patch it into the DOM
-     *
-     * Alias for view() method using partial terminology. Commonly used for
-     * rendering reusable UI sections that can be updated independently.
-     *
-     * @param string $view Blade view name (dot notation supported)
-     * @param array<string, mixed> $data Variables to pass to the view template
-     * @param array<string, mixed> $options DOM patching options (selector, mode, useViewTransition)
-     * @param bool $web Whether to set this view as the fallback for non-Gale requests
-     *
-     * @return static Returns this instance for method chaining
-     */
-    public function partial(string $view, array $data = [], array $options = [], bool $web = false): self
-    {
-        return $this->view($view, $data, $options, $web);
-    }
-
-    /**
      * Update a specific named component's state
      *
      * Sends a gale-patch-component event to update the Alpine state of a
@@ -223,6 +259,32 @@ class GaleResponse implements Responsable
     }
 
     /**
+     * Invoke a method on a named component
+     *
+     * Sends a gale-invoke-method event to call a method on a component
+     * registered with x-component directive. The method must exist on the
+     * component's Alpine x-data object.
+     *
+     * @param string $componentName Name of the component (from x-component attribute)
+     * @param string $method Method name to invoke
+     * @param array<int, mixed> $args Arguments to pass to the method
+     *
+     * @return static Returns this instance for method chaining
+     */
+    public function componentMethod(string $componentName, string $method, array $args = []): self
+    {
+        /** @phpstan-ignore method.notFound (isGale is a Request macro) */
+        if (!request()->isGale()) {
+            return $this;
+        }
+
+        $dataLines = $this->buildMethodInvocationEvent($componentName, $method, $args);
+        $this->handleEvent('gale-invoke-method', $dataLines);
+
+        return $this;
+    }
+
+    /**
      * Update reactive state in the client-side Alpine x-data store
      *
      * Sends state updates to synchronize server state with the client using RFC 7386
@@ -231,16 +293,50 @@ class GaleResponse implements Responsable
      *
      * @param string|array<string, mixed> $key State key or associative array of state
      * @param mixed $value State value when $key is a string, ignored when $key is array
+     * @param array<string, mixed> $options State options (onlyIfMissing)
      *
      * @return static Returns this instance for method chaining
      */
-    public function state(string|array $key, mixed $value = null): self
+    public function state(string|array $key, mixed $value = null, array $options = []): self
     {
         if (is_array($key)) {
-            return $this->patchState($key);
+            return $this->patchState($key, $options);
         }
 
-        return $this->patchState([$key => $value]);
+        return $this->patchState([$key => $value], $options);
+    }
+
+    /**
+     * Set reactive messages for client-side display via x-message directive
+     *
+     * Convenience method for setting the 'messages' state. Messages are displayed
+     * automatically by x-message directives bound to corresponding field names.
+     *
+     * Example usage:
+     * - Validation errors: gale()->messages(['email' => 'Invalid email'])
+     * - Success messages: gale()->messages(['_success' => 'Profile saved!'])
+     * - Clear all: gale()->clearMessages()
+     *
+     * @param array<string, string> $messages Field names mapped to message strings
+     *
+     * @return static Returns this instance for method chaining
+     */
+    public function messages(array $messages): self
+    {
+        return $this->state('messages', $messages);
+    }
+
+    /**
+     * Clear all reactive messages from client-side state
+     *
+     * Removes all messages by setting the 'messages' state to an empty array.
+     * Useful after successful form submission to clear validation errors.
+     *
+     * @return static Returns this instance for method chaining
+     */
+    public function clearMessages(): self
+    {
+        return $this->state('messages', []);
     }
 
     /**
@@ -281,22 +377,6 @@ class GaleResponse implements Responsable
     public function js(string $script, array $options = []): self
     {
         return $this->executeScript($script, $options);
-    }
-
-    /**
-     * Alias for js() method using script terminology
-     *
-     * Provides alternative method name for JavaScript execution. Functionally
-     * identical to the js() method.
-     *
-     * @param string $script JavaScript code to execute
-     * @param array<string, mixed> $options Script element options (attributes, autoRemove)
-     *
-     * @return static Returns this instance for method chaining
-     */
-    public function script(string $script, array $options = []): self
-    {
-        return $this->js($script, $options);
     }
 
     /**
@@ -649,8 +729,11 @@ class GaleResponse implements Responsable
      * Switches the response builder from accumulation mode to streaming mode, where events
      * are sent immediately as methods are called. The provided callback receives this instance
      * and executes in streaming context. Any events accumulated before stream() was called are
-     * flushed first. Handles output buffering, exception rendering, dump/dd integration, and
-     * redirect behavior for streaming responses.
+     * flushed first. Handles output buffering, exception rendering, and redirect behavior for
+     * streaming responses.
+     *
+     * dd() and dump() are handled naturally by Laravel - output is captured via shutdown
+     * function (for dd() which calls exit) or output buffer (for dump()).
      *
      * @param \Closure $callback Function receiving this instance in streaming mode
      *
@@ -663,7 +746,10 @@ class GaleResponse implements Responsable
                 ob_start();
 
                 $this->overrideRedirectForStream();
-                $this->overrideDumpForStream();
+
+                // Register shutdown function to capture dd() output (dd() calls exit)
+                // This runs after script termination, capturing any buffered output
+                register_shutdown_function([$this, 'handleShutdownOutput']);
 
                 $callback($gale);
 
@@ -717,7 +803,7 @@ class GaleResponse implements Responsable
 
                 private function performRealRedirect(string $url): never
                 {
-                    echo "event: datastar-patch-elements\n";
+                    echo "event: gale-patch-elements\n";
                     echo 'data: elements <script>window.location.href = ' . json_encode($url) . ";</script>\n";
                     echo "data: selector body\n";
                     echo "data: mode append\n\n";
@@ -746,73 +832,77 @@ class GaleResponse implements Responsable
     }
 
     /**
-     * Override Symfony VarDumper for streaming mode
+     * Handle shutdown output capture for dd() calls
      *
-     * Replaces the default VarDumper handler to intercept dd() and dump() calls,
-     * rendering them as full HTML pages that replace the document and terminate
-     * the stream. Prevents dump output from corrupting the SSE event stream.
+     * This method is registered as a shutdown function to capture output from dd()
+     * which calls exit(). The shutdown function runs after script termination,
+     * allowing us to capture and send the native Laravel dd() output via SSE.
+     *
+     * Note: This is public because it's called via register_shutdown_function()
      */
-    protected function overrideDumpForStream(): void
+    public function handleShutdownOutput(): void
     {
-        \Symfony\Component\VarDumper\VarDumper::setHandler(function ($var) {
-            $html = $this->generateNativeDumpHtml($var);
-            $this->replaceDocumentAndExit($html);
-        });
-    }
-
-    /**
-     * Generate HTML page for variable dump output
-     *
-     * Creates a styled HTML document containing the variable dump using Symfony's
-     * HtmlDumper. Replicates Laravel's dd() styling with dark theme and monospace fonts.
-     *
-     * @param mixed $var Variable to dump
-     *
-     * @return string Complete HTML document with embedded dump output
-     */
-    protected function generateNativeDumpHtml(mixed $var): string
-    {
-        $cloner = new \Symfony\Component\VarDumper\Cloner\VarCloner;
-        $dumper = new \Symfony\Component\VarDumper\Dumper\HtmlDumper;
-
+        // Get any buffered output (from dd(), dump(), echo, etc.)
         $output = '';
-        $dumper->dump($cloner->cloneVar($var), function ($line) use (&$output) {
-            $output .= $line;
-        });
+        while (ob_get_level() > 0) {
+            $output = ob_get_clean() . $output;
+        }
 
-        return '<!DOCTYPE html>
+        // If there's output, send it to replace the document
+        if (!empty(trim($output))) {
+            // Check if output looks like HTML (dd/dump output includes HTML)
+            if ($this->looksLikeHtml($output)) {
+                // Wrap in basic HTML structure if it doesn't have doctype
+                if (stripos($output, '<!DOCTYPE') === false && stripos($output, '<html') === false) {
+                    $output = '<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Laravel dd() Output</title>
-    <style>
-        body { background: #18171B; color: #FF8400; font-family: monospace; margin: 0; padding: 20px; }
-        pre.sf-dump { background: #18171B !important; }
-        .sf-dump { font-family: monospace; font-size: 12px; line-height: 1.2em; color: #FF8400; word-wrap: break-word; white-space: pre-wrap; position: relative; z-index: 99999; word-break: break-all; }
-        .sf-dump .sf-dump-compact { display: none; }
-        .sf-dump abbr { text-decoration: none; cursor: help; }
-        .sf-dump a { text-decoration: none; cursor: pointer; outline: none; color: inherit; }
-        .sf-dump .sf-dump-ellipsis { color: #A0A0A0; }
-        .sf-dump .sf-dump-key { color: #A626A4; }
-        .sf-dump .sf-dump-public { color: #222222; }
-        .sf-dump .sf-dump-protected { color: #C41A16; }
-        .sf-dump .sf-dump-private { color: #C41A16; }
-        .sf-dump .sf-dump-str { color: #C41A16; }
-        .sf-dump .sf-dump-note { color: #1299DA; }
-        .sf-dump .sf-dump-ref { color: #6E7681; }
-        .sf-dump .sf-dump-meta { color: #B729D9; }
-    </style>
+    <title>Laravel Output</title>
 </head>
 <body>' . $output . '</body>
 </html>';
+                }
+            } else {
+                // Plain text output - wrap in minimal HTML
+                $output = '<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Laravel Output</title>
+</head>
+<body style="background: #18171B; color: white; font-family: monospace; padding: 20px;">
+<pre>' . htmlspecialchars($output) . '</pre>
+</body>
+</html>';
+            }
+
+            // Send via SSE to replace document
+            echo "event: gale-patch-elements\n";
+            echo 'data: elements <script>document.open(); document.write(' . json_encode($output) . "); document.close();</script>\n";
+            echo "data: selector body\n";
+            echo "data: mode append\n\n";
+            flush();
+        }
+    }
+
+    /**
+     * Check if content appears to be HTML
+     */
+    private function looksLikeHtml(string $content): bool
+    {
+        // Check for common HTML patterns (tags, entities, Symfony dump classes)
+        return preg_match('/<[a-z][\s\S]*>/i', $content) === 1
+            || strpos($content, 'sf-dump') !== false
+            || strpos($content, '<!DOCTYPE') !== false;
     }
 
     /**
      * Process output buffer and replace document if content exists
      *
-     * Captures buffered output from the streaming callback and wraps it in a complete
-     * HTML document if non-empty. Used to display echo statements and other direct
-     * output during streaming mode. Terminates stream after document replacement.
+     * Captures buffered output from the streaming callback. If output contains HTML
+     * (like Laravel's native dd/dump output), it's passed through directly. Otherwise,
+     * plain text is wrapped minimally. Terminates stream after document replacement.
      */
     protected function handleStreamOutput(): void
     {
@@ -821,18 +911,40 @@ class GaleResponse implements Responsable
             ob_end_clean();
         }
 
-        /** @phpstan-ignore argument.type (ob_get_contents can return false on empty buffer) */
+        // Early return if buffer is empty or false
+        if ($output === false || trim($output) === '') {
+            return;
+        }
+
         if (!empty(trim($output))) {
-            $html = '<!DOCTYPE html>
+            // Check if output looks like HTML (Laravel's native dd/dump includes HTML)
+            if ($this->looksLikeHtml($output)) {
+                // Wrap in basic HTML structure if it doesn't have doctype
+                if (stripos($output, '<!DOCTYPE') === false && stripos($output, '<html') === false) {
+                    $html = '<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Laravel Output</title>
+</head>
+<body>' . $output . '</body>
+</html>';
+                } else {
+                    $html = $output;
+                }
+            } else {
+                // Plain text output - wrap in minimal HTML
+                $html = '<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
     <title>Laravel Output</title>
 </head>
 <body style="background: #18171B; color: white; font-family: monospace; padding: 20px;">
-    ' . $output . '
+<pre>' . htmlspecialchars($output) . '</pre>
 </body>
 </html>';
+            }
 
             $this->replaceDocumentAndExit($html);
         }
@@ -849,7 +961,7 @@ class GaleResponse implements Responsable
      */
     protected function replaceDocumentAndExit(string $html): void
     {
-        echo "event: datastar-patch-elements\n";
+        echo "event: gale-patch-elements\n";
         echo 'data: elements <script>document.open(); document.write(' . json_encode($html) . "); document.close();</script>\n";
         echo "data: selector body\n";
         echo "data: mode append\n\n";
@@ -864,14 +976,13 @@ class GaleResponse implements Responsable
     /**
      * Restore original Laravel service bindings
      *
-     * Removes custom redirect and VarDumper bindings established for streaming mode,
+     * Removes custom redirect binding established for streaming mode,
      * restoring default Laravel behavior. Called in finally block to ensure cleanup
      * occurs even when exceptions are thrown.
      */
     protected function restoreOriginalHandlers(): void
     {
         app()->forgetInstance('redirect');
-        \Symfony\Component\VarDumper\VarDumper::setHandler(null);
     }
 
     /**
@@ -964,7 +1075,7 @@ class GaleResponse implements Responsable
         // Handle Gale requests
         if ($streamCallback) {
             // Streaming mode: use StreamedResponse for real-time output
-            $response = new StreamedResponse(function () use ($events, $streamCallback) {
+            $response = new StreamedResponse(function () use ($streamCallback) {
                 if (session_status() === PHP_SESSION_ACTIVE) {
                     session_write_close();
                 }
@@ -1112,10 +1223,17 @@ class GaleResponse implements Responsable
     }
 
     /**
-     * Format SSE event according to Datastar protocol
+     * Format SSE event according to SSE specification
      *
-     * Constructs properly formatted Server-Sent Event with event type and data lines,
-     * terminated by blank line as required by SSE specification.
+     * Constructs properly formatted Server-Sent Event with optional id, retry duration,
+     * event type and data lines, terminated by blank line as required by SSE specification.
+     *
+     * SSE format:
+     * - id: <event-id>       (optional, for replay support)
+     * - retry: <ms>          (optional, reconnection time)
+     * - event: <event-type>  (required)
+     * - data: <line>         (one or more data lines)
+     * - <blank line>         (terminates the event)
      *
      * @param string $eventType Event type line (event: xxx)
      * @param array<int, string> $dataLines Data payload lines (data: xxx)
@@ -1124,7 +1242,19 @@ class GaleResponse implements Responsable
      */
     protected function formatEvent(string $eventType, array $dataLines): string
     {
-        $output = ["event: {$eventType}"];
+        $output = [];
+
+        // Add event ID for replay support (if set)
+        if ($this->eventId !== null) {
+            $output[] = "id: {$this->eventId}";
+        }
+
+        // Add retry duration (if set and different from default)
+        if ($this->retryDuration !== null) {
+            $output[] = "retry: {$this->retryDuration}";
+        }
+
+        $output[] = "event: {$eventType}";
 
         foreach ($dataLines as $line) {
             /** @phpstan-ignore function.alreadyNarrowedType (dataLines array items are already strings per PHPDoc) */
@@ -1168,11 +1298,13 @@ class GaleResponse implements Responsable
 
         // Settle time for CSS transitions (in milliseconds)
         if (!empty($options['settle'])) {
+            /** @phpstan-ignore cast.int (mixed array value from user options, expected numeric) */
             $dataLines[] = 'settle ' . (int) $options['settle'];
         }
 
         // Limit number of targets to patch
         if (!empty($options['limit'])) {
+            /** @phpstan-ignore cast.int (mixed array value from user options, expected numeric) */
             $dataLines[] = 'limit ' . (int) $options['limit'];
         }
 
@@ -1239,8 +1371,36 @@ class GaleResponse implements Responsable
         }
 
         $stateJson = json_encode($state);
-        /** @phpstan-ignore argument.type (json_encode result is always string for arrays) */
         $dataLines[] = "state {$stateJson}";
+
+        return $dataLines;
+    }
+
+    /**
+     * Build SSE data lines for method invocation event
+     *
+     * Constructs array of SSE data lines for gale-invoke-method event including
+     * component name, method name, and JSON-encoded arguments array.
+     *
+     * @param string $componentName Component name (from x-component attribute)
+     * @param string $method Method name to invoke
+     * @param array<int, mixed> $args Arguments to pass to the method
+     *
+     * @return array<int, string> Array of SSE data lines
+     */
+    protected function buildMethodInvocationEvent(string $componentName, string $method, array $args): array
+    {
+        $dataLines = [];
+
+        // Component name
+        $dataLines[] = "component {$componentName}";
+
+        // Method name
+        $dataLines[] = "method {$method}";
+
+        // Arguments as JSON
+        $argsJson = json_encode($args);
+        $dataLines[] = "args {$argsJson}";
 
         return $dataLines;
     }
@@ -1526,9 +1686,9 @@ class GaleResponse implements Responsable
 
         $deletionArray = [];
         foreach ($stateKeys as $stateKey) {
-            // Special handling for errors state - reset to empty array instead of null
-            // The errors state is used by x-message directive and should always be an array
-            $deletionArray[$stateKey] = ($stateKey === 'errors') ? [] : null;
+            // Special handling for messages state - reset to empty array instead of null
+            // The messages state is used by x-message directive and should always be an array
+            $deletionArray[$stateKey] = ($stateKey === 'messages') ? [] : null;
         }
 
         return $deletionArray;
@@ -1615,148 +1775,6 @@ class GaleResponse implements Responsable
     }
 
     /**
-     * Generate navigation script using Alpine Gale action
-     *
-     * @param array<string, mixed> $options
-     *
-     * @phpstan-ignore method.unused (Reserved for future frontend integration)
-     */
-    private function generateNavigateScript(string $url, ?string $key, array $options = []): string
-    {
-        $safeUrl = json_encode($url, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
-        $safeKey = json_encode($key ?: 'true', JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
-        $safeOptions = json_encode($this->normalizeNavigationOptions($options, $url), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
-
-        // Call @navigate Datastar action (proper integration)
-        return "@navigate({$safeUrl}, {$safeKey}, {$safeOptions})";
-    }
-
-    /**
-     * Generate back navigation script using Datastar action
-     *
-     * @param array<string, mixed> $options
-     *
-     * @phpstan-ignore method.unused (Reserved for future frontend integration)
-     */
-    private function generateBackScript(string $fallbackUrl, string $key, array $options = []): string
-    {
-        $safeFallbackUrl = json_encode($fallbackUrl, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
-        $safeKey = json_encode($key, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
-        $safeOptions = json_encode($this->normalizeNavigationOptions($options, $fallbackUrl), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
-
-        // Call @back Datastar action (proper integration)
-        return "@back({$safeFallbackUrl}, {$safeKey}, {$safeOptions})";
-    }
-
-    /**
-     * Generate refresh script using Datastar action
-     *
-     * @param array<string, mixed> $options
-     *
-     * @phpstan-ignore method.unused (Reserved for future frontend integration)
-     */
-    private function generateRefreshScript(string $key, array $options = []): string
-    {
-        $safeKey = json_encode($key, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
-        // For refresh, we always want to merge by default since we're refreshing current state
-        $refreshOptions = ['merge' => $options['merge'] ?? true] + $options;
-        $safeOptions = json_encode($this->normalizeNavigationOptions($refreshOptions, ''), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
-
-        // Call @refresh Datastar action (proper integration)
-        return "@refresh({$safeKey}, {$safeOptions})";
-    }
-
-    /**
-     * Normalize navigation options with SMART defaults based on URL
-     *
-     * @param array<string, mixed> $options Raw options from user
-     * @param string $url The target URL to analyze
-     *
-     * @return array<string, mixed> Normalized options with smart defaults
-     */
-    private function normalizeNavigationOptions(array $options = [], string $url = ''): array
-    {
-        $merge = $options['merge'] ?? null;
-
-        // If merge not explicitly set, use smart default based on URL
-        if ($merge === null) {
-            $merge = $this->shouldMergeByDefault($url);
-        }
-
-        return [
-            'merge' => $merge,
-            'only' => $options['only'] ?? null,
-            'except' => $options['except'] ?? null,
-        ];
-    }
-
-    /**
-     * Determine if URL should merge by default (matches frontend logic)
-     *
-     * Logic:
-     * a) Simple URLs without query params: /dashboard → DON'T merge
-     * b) URLs with query params: /dashboard?search=john → DO merge
-     * c) Query-only URLs: ?search=john → DO merge
-     */
-    private function shouldMergeByDefault(string $url): bool
-    {
-        // Query-only URLs (start with ?) should always merge
-        if (str_starts_with($url, '?')) {
-            return true;
-        }
-
-        // Check if URL has query parameters
-        return str_contains($url, '?');
-    }
-
-    /**
-     * Smart navigation based on context (convenience method)
-     *
-     * Automatically chooses merge behavior based on common patterns
-     *
-     * @param string $url Target URL
-     * @param string|null $key Navigation key
-     * @param string $context Context hint (auth, admin, export, etc.)
-     */
-    public function smartNavigate(string $url, ?string $key = null, string $context = 'default'): self
-    {
-        $options = $this->getSmartNavigationOptions($url, $context);
-
-        return $this->navigate($url, $key ?? 'true', $options);
-    }
-
-    /**
-     * Get smart navigation options based on context
-     *
-     * @return array<string, mixed>
-     */
-    private function getSmartNavigationOptions(string $url, string $context): array
-    {
-        // Auth-related routes should clear parameters
-        if ($context === 'auth' || preg_match('/\/(login|logout|register|reset)/', $url)) {
-            return ['merge' => false];
-        }
-
-        // Export routes might want to preserve search/filter context
-        if ($context === 'export' || str_contains($url, '/export')) {
-            return ['except' => ['page']]; // Remove pagination but keep filters
-        }
-
-        // Admin routes might want selective preservation
-        if ($context === 'admin' || str_starts_with($url, '/admin/')) {
-            return ['except' => ['user_context']];
-        }
-
-        // Error/reset scenarios should clear everything
-        if ($context === 'error' || $context === 'reset') {
-            return ['merge' => false];
-        }
-
-        // Default: preserve everything
-        return ['merge' => true];
-    }
-
-    /**
      * Navigate to URL with explicit merge control and comprehensive options
      *
      * REPLACES THE EXISTING navigate() METHOD WITH EXPLICIT BEHAVIOR
@@ -1772,8 +1790,7 @@ class GaleResponse implements Responsable
             return $this;
         }
 
-        $urlManager = app(\Dancycodes\Gale\Services\GaleUrlManager::class);
-        $urlManager->enforceUrlSingleUse();
+        $this->enforceUrlSingleUse();
 
         // Process input based on type - NO backend merging, let frontend handle it
         if (is_array($url)) {
@@ -1786,7 +1803,7 @@ class GaleResponse implements Responsable
             $finalUrl = $url;
         }
 
-        $urlManager->validateUrl($finalUrl);
+        $this->validateNavigateUrl($finalUrl);
 
         // Generate navigation script with comprehensive options
         // Frontend @navigate action will handle all merging based on window.location
@@ -1898,16 +1915,6 @@ class GaleResponse implements Responsable
     }
 
     /**
-     * Reset to page 1 while preserving other filters
-     *
-     * @param string $key Navigation key
-     */
-    public function resetPagination(string $key = 'pagination'): self
-    {
-        return $this->navigate(['page' => 1], $key, ['merge' => true]);
-    }
-
-    /**
      * INTERNAL PROCESSING METHODS
      */
 
@@ -1993,53 +2000,73 @@ class GaleResponse implements Responsable
         return "document.dispatchEvent(new CustomEvent('gale:navigate', { detail: {$safeData} }))";
     }
 
-    // COMPATIBILITY METHODS - DEPRECATED BUT MAINTAINED
+    // ==========================================
+    // URL Validation (Internal Methods)
+    // ==========================================
 
     /**
-     * @deprecated Use navigateWith() or navigate() with explicit options
+     * Enforce single URL operation constraint per response
      *
-     * @param array<string, mixed> $params
-     * @param array<string, mixed> $options
-     */
-    public function route(string $routeName, array $params = [], ?string $key = null, array $options = []): self
-    {
-        $url = route($routeName, $params);
-
-        return $this->navigate($url, $key ?? 'route', $options);
-    }
-
-    /**
-     * @deprecated Use navigateWith() or navigate() with explicit options
+     * Prevents multiple navigate calls in a single response to avoid conflicting
+     * history state changes. Throws exception if URL already set.
      *
-     * @param array<string, mixed> $options
+     * @throws \LogicException When URL operation already executed for current response
      */
-    public function back(string $fallbackUrl = '/', string $key = 'back', array $options = []): self
+    private function enforceUrlSingleUse(): void
     {
-        // Try to get referrer, fallback to provided URL
-        $backUrl = request()->headers->get('referer', $fallbackUrl);
-
-        // Only use referrer if it's from same origin
-        if ($backUrl && $backUrl !== request()->url()) {
-            $referrerHost = parse_url($backUrl, PHP_URL_HOST);
-            $currentHost = parse_url(request()->url(), PHP_URL_HOST);
-
-            if ($referrerHost !== $currentHost) {
-                $backUrl = $fallbackUrl;
-            }
+        if ($this->urlSet) {
+            throw new \LogicException('URL can only be set once per response. Use navigate() only once per response.');
         }
 
-        return $this->navigate($backUrl ?? $fallbackUrl, $key, array_merge(['merge' => true], $options));
+        $this->urlSet = true;
     }
 
     /**
-     * @deprecated Use updateQueries() or navigate() with query array
+     * Validate URL format and enforce same-origin policy
      *
-     * @param array<string, mixed> $options
+     * Checks URL format validity and enforces same-origin policy for absolute URLs
+     * to prevent open redirect vulnerabilities. Relative paths are allowed.
+     *
+     * @param string $url URL to validate
+     *
+     * @throws \InvalidArgumentException When URL format invalid or cross-origin URL detected
      */
-    public function refresh(string $key = 'refresh', array $options = []): self
+    private function validateNavigateUrl(string $url): void
     {
-        $currentUrl = request()->fullUrl();
+        // Allow relative paths (start with / or don't have ://)
+        if ($this->isRelativePath($url)) {
+            return;
+        }
 
-        return $this->navigate($currentUrl, $key, array_merge(['merge' => true], $options));
+        // Validate absolute URL format
+        if (!filter_var($url, FILTER_VALIDATE_URL)) {
+            throw new \InvalidArgumentException("Invalid URL format: {$url}");
+        }
+
+        // Enforce same-origin policy for absolute URLs
+        $this->validateSameOrigin($url);
+    }
+
+    /**
+     * Determine if URL string represents a relative path
+     */
+    private function isRelativePath(string $url): bool
+    {
+        return str_starts_with($url, '/') || !str_contains($url, '://');
+    }
+
+    /**
+     * Validate URL host matches current request host (same-origin policy)
+     *
+     * @throws \InvalidArgumentException When URL host differs from current request host
+     */
+    private function validateSameOrigin(string $url): void
+    {
+        $parsedUrl = parse_url($url);
+        $currentHost = request()->getHost();
+
+        if (isset($parsedUrl['host']) && $parsedUrl['host'] !== $currentHost) {
+            throw new \InvalidArgumentException("Cross-origin URLs not allowed. Got: {$parsedUrl['host']}, Expected: {$currentHost}");
+        }
     }
 }

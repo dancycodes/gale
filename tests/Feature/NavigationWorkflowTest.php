@@ -28,11 +28,11 @@ class NavigationWorkflowTest extends TestCase
     }
 
     /** @test */
-    public function test_navigate_preserves_signals()
+    public function test_navigate_preserves_state()
     {
         Route::get('/navigate-preserve', function () {
             return gale()
-                ->signals(['count' => 5])
+                ->state(['count' => 5])
                 ->navigate('/next-page');
         });
         $response = $this->call('GET', '/navigate-preserve', [], [], [], [
@@ -121,7 +121,7 @@ class NavigationWorkflowTest extends TestCase
     {
         Route::get('/navigate-key', function () {
             return gale()
-                ->signals(['updated' => true])
+                ->state(['updated' => true])
                 ->navigate('/dashboard', 'sidebar');
         });
         $response = $this->call('GET', '/navigate-key', [], [], [], [
@@ -160,7 +160,7 @@ class NavigationWorkflowTest extends TestCase
         Route::get('/detect-navigate', function () {
             $isNavigate = request()->isGaleNavigate();
 
-            return gale()->signals(['isNavigate' => $isNavigate]);
+            return gale()->state(['isNavigate' => $isNavigate]);
         });
         // Without navigate header
         $response1 = $this->call('GET', '/detect-navigate', [], [], [], [
@@ -180,7 +180,7 @@ class NavigationWorkflowTest extends TestCase
     {
         // Simulate navigation history
         Route::get('/page1', function () {
-            return gale()->signals(['page' => 1]);
+            return gale()->state(['page' => 1]);
         });
         Route::get('/page2', function () {
             return gale()->navigate('/page1');
@@ -208,7 +208,7 @@ class NavigationWorkflowTest extends TestCase
     {
         Route::get('/history-test', function () {
             return gale()
-                ->signals(['visited' => true])
+                ->state(['visited' => true])
                 ->navigate('/target');
         });
         $response = $this->call('GET', '/history-test', [], [], [], [
@@ -222,7 +222,7 @@ class NavigationWorkflowTest extends TestCase
     {
         Route::post('/form-navigate', function () {
             return gale()
-                ->signals(['submitted' => true])
+                ->state(['submitted' => true])
                 ->navigate('/success');
         });
         $signals = json_encode(['name' => 'Test']);
@@ -249,7 +249,7 @@ class NavigationWorkflowTest extends TestCase
     {
         Route::get('/perf-navigate', function () {
             return gale()
-                ->signals(['data' => range(1, 100)])
+                ->state(['data' => range(1, 100)])
                 ->navigate('/next');
         });
         $startTime = microtime(true);

@@ -153,7 +153,20 @@ claude.json
 .vscode_test/
 
 
-PRODUCTION_READY.md
-DELETED_TESTS.md
-HTML_TESTS_STATUS.md
-HTML.md
+# Documentation drafts
+TRANSFORMATION_TODO.md
+
+# Test output files
+test_results.txt
+phpstan-errors.txt
+
+# Batch scripts (development only)
+*.bat
+
+# Release config (handled by CI)
+release-please-config.json
+.release-please-manifest.json
+
+# Backup files
+*.backup
+*.bak

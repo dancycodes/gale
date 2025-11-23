@@ -47,7 +47,7 @@ class GaleRedirectTest extends TestCase
         // Convert to response and check the generated JavaScript
         $response = $redirect->toResponse(request());
 
-        $this->assertInstanceOf(\Symfony\Component\HttpFoundation\StreamedResponse::class, $response);
+        $this->assertInstanceOf(\Symfony\Component\HttpFoundation\Response::class, $response);
 
         // Get SSE events
         $events = $this->getSSEEvents($response);
@@ -147,7 +147,7 @@ class GaleRedirectTest extends TestCase
         $response = $redirect->toResponse(request());
 
         // Should return a StreamedResponse (which is what GaleResponse generates)
-        $this->assertInstanceOf(\Symfony\Component\HttpFoundation\StreamedResponse::class, $response);
+        $this->assertInstanceOf(\Symfony\Component\HttpFoundation\Response::class, $response);
     }
 
     /** @test */
@@ -523,7 +523,7 @@ class GaleRedirectTest extends TestCase
         $response = $redirect->forceReload(true);
 
         // Verify it returns a StreamedResponse
-        $this->assertInstanceOf(\Symfony\Component\HttpFoundation\StreamedResponse::class, $response);
+        $this->assertInstanceOf(\Symfony\Component\HttpFoundation\Response::class, $response);
 
         // Verify the reload script is generated
         $events = $this->getSSEEvents($response);
@@ -652,7 +652,7 @@ class GaleRedirectTest extends TestCase
         $response = $redirect->toResponse(request());
 
         // Should still generate valid SSE response
-        $this->assertInstanceOf(\Symfony\Component\HttpFoundation\StreamedResponse::class, $response);
+        $this->assertInstanceOf(\Symfony\Component\HttpFoundation\Response::class, $response);
     }
 
     /** @test */

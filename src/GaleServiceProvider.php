@@ -2,9 +2,8 @@
 
 namespace Dancycodes\Gale;
 
+use Dancycodes\Gale\Exceptions\GaleMessageException;
 use Dancycodes\Gale\Http\GaleRedirect;
-use Dancycodes\Gale\Services\GaleFileStorage;
-use Dancycodes\Gale\Services\GaleUrlManager;
 use Dancycodes\Gale\View\Fragment\BladeFragment;
 use Illuminate\Http\Request;
 use Illuminate\Routing\ResponseFactory;
@@ -51,8 +50,6 @@ class GaleServiceProvider extends ServiceProvider
      *
      * Services registered:
      * - GaleResponse: SSE response builder
-     * - GaleUrlManager: Navigate URL manipulation
-     * - GaleFileStorage: Base64 file storage operations
      * - GaleRedirect: Full-page redirect responses
      */
     public function register(): void
@@ -65,13 +62,6 @@ class GaleServiceProvider extends ServiceProvider
         $this->app->scoped('gale.response', function ($app) {
             return new \Dancycodes\Gale\Http\GaleResponse;
         });
-
-        $this->app->singleton(GaleUrlManager::class, function ($app) {
-            return new GaleUrlManager($app['request']);
-        });
-
-        $this->app->singleton(GaleFileStorage::class);
-        $this->app->alias(GaleFileStorage::class, 'gale.storage');
 
         $this->mergeConfigFrom(
             __DIR__ . '/../config/gale.php',
@@ -111,9 +101,7 @@ class GaleServiceProvider extends ServiceProvider
         $this->registerFragmentMacros();
         $this->registerRequestMacros();
         $this->registerResponseMacros();
-        $this->registerBase64ValidationRules();
         $this->registerRouteDiscovery();
-        $this->registerRedirectConversionMiddleware();
     }
 
     /**
@@ -139,7 +127,6 @@ class GaleServiceProvider extends ServiceProvider
             return "<?php echo '<script>window.galeState = ' . json_encode($expression ?: []) . ';</script>'; ?>";
         });
 
-
         // Conditional based on Gale request header
         Blade::if('ifgale', function () {
             return request()->hasHeader('Gale-Request');
@@ -160,9 +147,6 @@ class GaleServiceProvider extends ServiceProvider
     {
         return [
             'gale.response',
-            GaleUrlManager::class,
-            GaleFileStorage::class,
-            'gale.storage',
         ];
     }
 
@@ -263,7 +247,6 @@ class GaleServiceProvider extends ServiceProvider
             return data_get($state, $key, $default);
         });
 
-
         // Check if request is a Gale navigate request
         Request::macro('isGaleNavigate', function (string|array|null $key = null) {
             // First check if this is a navigate request at all
@@ -308,6 +291,42 @@ class GaleServiceProvider extends ServiceProvider
             $key = $this->galeNavigateKey();
 
             return $key ? array_map('trim', explode(',', $key)) : [];
+        });
+
+        // Validate state with reactive message response
+        // Works like $request->validate() but sends messages via SSE on failure
+        // Uses selective clearing - only clears messages for fields being validated
+        Request::macro('validateState', function (array $rules, array $customMessages = [], array $attributes = []) {
+            /** @phpstan-ignore method.notFound (state macro defined above) */
+            $data = $this->state();
+
+            // Get existing messages from request state (for selective clearing)
+            /** @phpstan-ignore method.notFound (state macro defined above) */
+            $existingMessages = $this->state('messages') ?? [];
+
+            // Ensure existingMessages is an array
+            if (!is_array($existingMessages)) {
+                $existingMessages = [];
+            }
+
+            // Selectively clear only fields being validated (preserve other messages)
+            $clearedMessages = $existingMessages;
+            foreach (array_keys($rules) as $field) {
+                // Handle nested fields like 'user.email' -> clear 'user.email'
+                $clearedMessages[$field] = '';
+            }
+
+            // Create validator
+            $validator = Validator::make($data, $rules, $customMessages, $attributes);
+
+            if ($validator->fails()) {
+                throw new GaleMessageException($validator, $clearedMessages);
+            }
+
+            // On success, send cleared messages to frontend (removes old errors)
+            gale()->state('messages', $clearedMessages);
+
+            return $validator->validated();
         });
     }
 
@@ -429,119 +448,5 @@ class GaleServiceProvider extends ServiceProvider
         });
 
         return $this;
-    }
-
-    /**
-     * Register custom base64 file validation rules
-     *
-     * Extends Laravel's Validator with custom rules for validating base64-encoded files
-     * transmitted through Gale signals. These rules mirror Laravel's standard file
-     * validation rules but operate on base64 data instead of uploaded files.
-     *
-     * Registered validation rules:
-     * - b64image: Validates base64 string represents a valid image
-     * - b64file: Validates base64 string is a valid file
-     * - b64dimensions: Validates image dimensions (width, height, min_width, etc.)
-     * - b64max: Validates file size does not exceed maximum kilobytes
-     * - b64min: Validates file size meets minimum kilobytes
-     * - b64mimes: Validates file MIME type against allowed types
-     * - b64size: Validates file size matches exact kilobytes
-     *
-     * All rules include validation message replacers that map to Laravel's existing
-     * file validation messages, providing a consistent validation experience.
-     *
-     *
-     * @see \Dancycodes\Gale\Validation\GaleBase64Validator
-     */
-    private function registerBase64ValidationRules(): void
-    {
-        $validator = new \Dancycodes\Gale\Validation\GaleBase64Validator;
-
-        // Register all base64 validation rules
-        // PHPStan doesn't recognize array callables are valid for Validator::extend()
-        /** @phpstan-ignore argument.type */
-        Validator::extend('b64image', [$validator, 'validateB64image']);
-        /** @phpstan-ignore argument.type */
-        Validator::extend('b64file', [$validator, 'validateB64file']);
-        /** @phpstan-ignore argument.type */
-        Validator::extend('b64dimensions', [$validator, 'validateB64dimensions']);
-        /** @phpstan-ignore argument.type */
-        Validator::extend('b64max', [$validator, 'validateB64max']);
-        /** @phpstan-ignore argument.type */
-        Validator::extend('b64min', [$validator, 'validateB64min']);
-        /** @phpstan-ignore argument.type */
-        Validator::extend('b64mimes', [$validator, 'validateB64mimes']);
-        /** @phpstan-ignore argument.type */
-        Validator::extend('b64size', [$validator, 'validateB64size']);
-
-        // Map to Laravel's existing validation messages for perfect DX
-        Validator::replacer('b64image', function ($message, $attribute, $rule, $parameters, $validator) {
-            return trans('validation.image', [
-                'attribute' => $validator->getDisplayableAttribute($attribute),
-            ]);
-        });
-
-        Validator::replacer('b64file', function ($message, $attribute, $rule, $parameters, $validator) {
-            return trans('validation.file', [
-                'attribute' => $validator->getDisplayableAttribute($attribute),
-            ]);
-        });
-
-        Validator::replacer('b64dimensions', function ($message, $attribute, $rule, $parameters, $validator) {
-            return trans('validation.dimensions', [
-                'attribute' => $validator->getDisplayableAttribute($attribute),
-            ]);
-        });
-
-        Validator::replacer('b64max', function ($message, $attribute, $rule, $parameters, $validator) {
-            return trans('validation.max.file', [
-                'attribute' => $validator->getDisplayableAttribute($attribute),
-                'max' => $parameters[0],
-            ]);
-        });
-
-        Validator::replacer('b64min', function ($message, $attribute, $rule, $parameters, $validator) {
-            return trans('validation.min.file', [
-                'attribute' => $validator->getDisplayableAttribute($attribute),
-                'min' => $parameters[0],
-            ]);
-        });
-
-        Validator::replacer('b64mimes', function ($message, $attribute, $rule, $parameters, $validator) {
-            return trans('validation.mimes', [
-                'attribute' => $validator->getDisplayableAttribute($attribute),
-                'values' => implode(', ', $parameters),
-            ]);
-        });
-
-        Validator::replacer('b64size', function ($message, $attribute, $rule, $parameters, $validator) {
-            return trans('validation.size.file', [
-                'attribute' => $validator->getDisplayableAttribute($attribute),
-                'size' => $parameters[0],
-            ]);
-        });
-    }
-
-
-    /**
-     * Register middleware to automatically convert redirects for Gale requests
-     *
-     * Registers the ConvertRedirectsForGale middleware globally to intercept
-     * standard Laravel redirect responses and convert them into Gale-style SSE
-     * responses for Gale requests. This prevents the double-navigation issue
-     * where flash data is consumed during fetch API's automatic redirect following.
-     *
-     * This middleware runs for ALL requests but only modifies responses for
-     * Gale requests that result in redirects, ensuring zero impact on normal
-     * HTTP request/response cycles.
-     */
-    protected function registerRedirectConversionMiddleware(): void
-    {
-        /** @var \Illuminate\Contracts\Http\Kernel $kernel */
-        $kernel = $this->app->make(\Illuminate\Contracts\Http\Kernel::class);
-
-        // Push middleware to the global middleware stack
-        // This ensures it runs for all requests and can intercept responses
-        $kernel->pushMiddleware(\Dancycodes\Gale\Http\Middleware\ConvertRedirectsForGale::class);
     }
 }

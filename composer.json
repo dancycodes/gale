@@ -1,6 +1,6 @@
 {
   "name": "dancycodes/gale",
-  "description": "Laravel-native reactive frontends using Alpine HYPER. Build dynamic UIs with Blade templates and Server-Sent Events.",
+  "description": "Laravel-native reactive frontends using Alpine Gale. Build dynamic UIs with Blade templates and Server-Sent Events.",
   "keywords": [
     "laravel",
     "alpine",
@@ -16,21 +16,19 @@
     "htmx-alternative",
     "livewire-alternative"
   ],
-  "homepage": "https://laravel-gale.com",
+  "homepage": "https://github.com/dancycodes/gale",
   "type": "library",
   "license": "MIT",
   "authors": [
     {
       "name": "DancyCodes",
       "email": "dancycodes@gmail.com",
-      "homepage": "https://laravel-gale.com",
       "role": "Developer"
     }
   ],
   "support": {
     "issues": "https://github.com/dancycodes/gale/issues",
-    "source": "https://github.com/dancycodes/gale",
-    "docs": "https://laravel-gale.com"
+    "source": "https://github.com/dancycodes/gale"
   },
   "require": {
     "php": "^8.2",

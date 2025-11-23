@@ -38,7 +38,7 @@ class GaleHelperTest extends TestCase
         $response = gale();
 
         $this->assertInstanceOf(GaleResponse::class, $response);
-        $this->assertIsCallable([$response, 'signals']);
+        $this->assertIsCallable([$response, 'state']);
         $this->assertIsCallable([$response, 'view']);
         $this->assertIsCallable([$response, 'fragment']);
     }

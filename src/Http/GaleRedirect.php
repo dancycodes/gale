@@ -107,44 +107,48 @@ class GaleRedirect implements Responsable
     /**
      * Convert to HTTP response implementing Responsable interface
      *
-     * Flashes accumulated session data, generates JavaScript for browser navigation, and returns
-     * StreamedResponse. Session is started if inactive, flash data is written, then session is
-     * saved before generating redirect script. JavaScript uses setTimeout to allow session write
-     * completion before navigation begins.
+     * Flashes accumulated session data and generates JavaScript for browser navigation.
+     * The frontend uses redirect: 'manual' in fetch, so this SSE response containing the
+     * redirect script will be properly received and executed.
+     *
+     * For non-Gale requests, falls back to standard Laravel redirect response.
      *
      * @param \Illuminate\Http\Request|null $request Laravel request instance or null for auto-detection
      *
-     * @return \Symfony\Component\HttpFoundation\StreamedResponse Streamed SSE response
+     * @return \Symfony\Component\HttpFoundation\Response SSE response for Gale, RedirectResponse for non-Gale
      */
-    public function toResponse($request = null): \Symfony\Component\HttpFoundation\StreamedResponse
+    public function toResponse($request = null): \Symfony\Component\HttpFoundation\Response
     {
-        // Persist session flash data with dual-aging compensation
-        if (!empty($this->flashData)) {
-            if (!session()->isStarted()) {
-                session()->start();
+        $request = $request ?? request();
+
+        // For non-Gale requests, use standard Laravel redirect
+        /** @phpstan-ignore method.notFound (isGale is a Request macro) */
+        if (!$request->isGale()) {
+            $redirect = redirect($this->url);
+
+            // Apply flash data
+            if (!empty($this->flashData)) {
+                foreach ($this->flashData as $key => $value) {
+                    session()->flash((string) $key, $value);
+                }
             }
 
+            return $redirect;
+        }
+
+        // Flash data to session for the next request
+        if (!empty($this->flashData)) {
             foreach ($this->flashData as $key => $value) {
                 session()->flash((string) $key, $value);
             }
-
-            // Persist flash data to storage, aging from _flash.new to _flash.old
-            session()->save();
-
-            // Compensate for dual session save by reflashing data back to _flash.new
-            // StartSession middleware's terminate() will execute final save(), properly
-            // aging flash data for consumption by the next request. Without reflash(),
-            // terminate() would age data twice (_flash.old to deleted)
-            session()->reflash();
         }
 
         $safeUrl = json_encode($this->url, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
 
-        // Use 200ms delay to ensure session write completes before navigation
-        // This prevents data loss under high load where writes may be delayed
-        $script = "setTimeout(() => window.location = {$safeUrl}, 200)";
+        // Direct navigation - no setTimeout needed since frontend handles response properly
+        $script = "window.location.href = {$safeUrl}";
 
-        /** @var \Symfony\Component\HttpFoundation\StreamedResponse $response */
+        /** @var \Symfony\Component\HttpFoundation\Response $response */
         $response = $this->galeResponse
             ->js($script, ['autoRemove' => true])
             ->toResponse($request);
@@ -297,38 +301,40 @@ class GaleRedirect implements Responsable
      * is true, bypasses browser cache by passing true to reload() function. Flashes any pending
      * session data before reload to preserve messages and errors across refresh.
      *
+     * For non-Gale requests, redirects back to current URL to trigger a refresh.
+     *
      * @param bool $forceReload Whether to bypass browser cache and force server fetch
      *
-     * @return \Symfony\Component\HttpFoundation\StreamedResponse Streamed SSE response
+     * @return \Symfony\Component\HttpFoundation\Response SSE response for Gale, RedirectResponse for non-Gale
      */
-    public function forceReload(bool $forceReload = false): \Symfony\Component\HttpFoundation\StreamedResponse
+    public function forceReload(bool $forceReload = false): \Symfony\Component\HttpFoundation\Response
     {
-        // Persist session flash data with dual-aging compensation
-        if (!empty($this->flashData)) {
-            if (!session()->isStarted()) {
-                session()->start();
+        // For non-Gale requests, redirect to current URL
+        /** @phpstan-ignore method.notFound (isGale is a Request macro) */
+        if (!request()->isGale()) {
+            // Flash data to session
+            if (!empty($this->flashData)) {
+                foreach ($this->flashData as $key => $value) {
+                    session()->flash((string) $key, $value);
+                }
             }
 
+            return redirect(request()->fullUrl());
+        }
+
+        // Flash data to session for the next request
+        if (!empty($this->flashData)) {
             foreach ($this->flashData as $key => $value) {
                 session()->flash((string) $key, $value);
             }
-
-            // Persist flash data to storage, aging from _flash.new to _flash.old
-            session()->save();
-
-            // Compensate for dual session save by reflashing data back to _flash.new
-            // StartSession middleware's terminate() will execute final save(), properly
-            // aging flash data for consumption by the next request. Without reflash(),
-            // terminate() would age data twice (_flash.old to deleted)
-            session()->reflash();
         }
 
         $reloadParam = $forceReload ? 'true' : 'false';
 
-        // Use 200ms delay to ensure session write completes before reload
-        $script = "setTimeout(() => window.location.reload({$reloadParam}), 200)";
+        // Direct reload - no setTimeout needed
+        $script = "window.location.reload({$reloadParam})";
 
-        /** @var \Symfony\Component\HttpFoundation\StreamedResponse $response */
+        /** @var \Symfony\Component\HttpFoundation\Response $response */
         $response = $this->galeResponse
             ->js($script, ['autoRemove' => true])
             ->toResponse();

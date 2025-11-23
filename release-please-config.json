@@ -2,7 +2,7 @@
   "release-type": "php",
   "packages": {
     ".": {
-      "package-name": "dancycodes/hyper",
+      "package-name": "dancycodes/gale",
       "changelog-sections": [
         {"type": "feat", "section": "Features", "hidden": false},
         {"type": "fix", "section": "Bug Fixes", "hidden": false},

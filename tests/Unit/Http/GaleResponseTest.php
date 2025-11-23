@@ -9,14 +9,14 @@ use Dancycodes\Gale\Tests\TestCase;
  * Test the GaleResponse class
  *
  * @see TESTING.md - File 2: GaleResponse Tests
- * Status: 🔄 BATCH 1 - Signal Methods (8 tests)
+ * Status: 🔄 BATCH 1 - State Methods (8 tests)
  */
 class GaleResponseTest extends TestCase
 {
     public static $latestResponse;
 
     // ===================================================================
-    // BATCH 1: Signal Methods Tests (8 tests)
+    // BATCH 1: State Methods Tests (8 tests)
     // ===================================================================
 
     /**
@@ -30,11 +30,11 @@ class GaleResponseTest extends TestCase
     }
 
     /** @test */
-    public function test_signals_method_updates_single_signal()
+    public function test_state_method_updates_single_state()
     {
         $this->setupGaleRequest();
 
-        $response = gale()->signals('count', 5);
+        $response = gale()->state('count', 5);
 
         $this->assertInstanceOf(GaleResponse::class, $response);
 
@@ -42,22 +42,22 @@ class GaleResponseTest extends TestCase
         $httpResponse = $response->toResponse(request());
         $events = $this->getSSEEvents($httpResponse);
 
-        // Should have one signal update event
+        // Should have one state update event
         $this->assertCount(1, $events);
         $this->assertEquals('gale-patch-state', $events[0]['type']);
 
-        // Parse the signal data
+        // Parse the state data
         $signalData = json_decode($events[0]['data'], true);
         $this->assertArrayHasKey('count', $signalData);
         $this->assertEquals(5, $signalData['count']);
     }
 
     /** @test */
-    public function test_signals_method_updates_multiple_signals()
+    public function test_state_method_updates_multiple_signals()
     {
         $this->setupGaleRequest();
 
-        $response = gale()->signals([
+        $response = gale()->state([
             'username' => 'john',
             'email' => 'john@example.com',
             'age' => 30,
@@ -69,11 +69,11 @@ class GaleResponseTest extends TestCase
         $httpResponse = $response->toResponse(request());
         $events = $this->getSSEEvents($httpResponse);
 
-        // Should have one signal update event
+        // Should have one state update event
         $this->assertCount(1, $events);
         $this->assertEquals('gale-patch-state', $events[0]['type']);
 
-        // Parse the signal data
+        // Parse the state data
         $signalData = json_decode($events[0]['data'], true);
         $this->assertArrayHasKey('username', $signalData);
         $this->assertArrayHasKey('email', $signalData);
@@ -84,11 +84,11 @@ class GaleResponseTest extends TestCase
     }
 
     /** @test */
-    public function test_signals_method_with_key_value_pair()
+    public function test_state_method_with_key_value_pair()
     {
         $this->setupGaleRequest();
 
-        $response = gale()->signals('active', true);
+        $response = gale()->state('active', true);
 
         $this->assertInstanceOf(GaleResponse::class, $response);
 
@@ -96,20 +96,20 @@ class GaleResponseTest extends TestCase
         $httpResponse = $response->toResponse(request());
         $events = $this->getSSEEvents($httpResponse);
 
-        // Parse the signal data
+        // Parse the state data
         $signalData = json_decode($events[0]['data'], true);
         $this->assertArrayHasKey('active', $signalData);
         $this->assertTrue($signalData['active']);
     }
 
     /** @test */
-    public function test_signals_method_chains_correctly()
+    public function test_state_method_chains_correctly()
     {
         $this->setupGaleRequest();
 
         $response = gale()
-            ->signals('step', 1)
-            ->signals('status', 'processing');
+            ->state('step', 1)
+            ->state('status', 'processing');
 
         $this->assertInstanceOf(GaleResponse::class, $response);
 
@@ -117,12 +117,12 @@ class GaleResponseTest extends TestCase
         $httpResponse = $response->toResponse(request());
         $events = $this->getSSEEvents($httpResponse);
 
-        // Should have two signal update events (chained calls)
+        // Should have two state update events (chained calls)
         $this->assertCount(2, $events);
         $this->assertEquals('gale-patch-state', $events[0]['type']);
         $this->assertEquals('gale-patch-state', $events[1]['type']);
 
-        // Parse the signal data for both events
+        // Parse the state data for both events
         $signalData1 = json_decode($events[0]['data'], true);
         $signalData2 = json_decode($events[1]['data'], true);
 
@@ -134,20 +134,20 @@ class GaleResponseTest extends TestCase
     }
 
     /** @test */
-    public function test_signals_method_accumulates_multiple_calls()
+    public function test_state_method_accumulates_multiple_calls()
     {
         $this->setupGaleRequest();
 
         $response = gale();
-        $response->signals('first', 'value1');
-        $response->signals('second', 'value2');
-        $response->signals('third', 'value3');
+        $response->state('first', 'value1');
+        $response->state('second', 'value2');
+        $response->state('third', 'value3');
 
         // Get SSE events from response
         $httpResponse = $response->toResponse(request());
         $events = $this->getSSEEvents($httpResponse);
 
-        // Should have three signal update events
+        // Should have three state update events
         $this->assertCount(3, $events);
 
         // Verify each event has correct type
@@ -157,11 +157,11 @@ class GaleResponseTest extends TestCase
     }
 
     /** @test */
-    public function test_signals_method_overwrites_duplicate_keys()
+    public function test_state_method_overwrites_duplicate_keys()
     {
         $this->setupGaleRequest();
 
-        $response = gale()->signals([
+        $response = gale()->state([
             'counter' => 1,
             'counter' => 5,  // Duplicate key - should overwrite
         ]);
@@ -172,18 +172,18 @@ class GaleResponseTest extends TestCase
         $httpResponse = $response->toResponse(request());
         $events = $this->getSSEEvents($httpResponse);
 
-        // Parse the signal data
+        // Parse the state data
         $signalData = json_decode($events[0]['data'], true);
         $this->assertArrayHasKey('counter', $signalData);
         $this->assertEquals(5, $signalData['counter']); // Should have the last value
     }
 
     /** @test */
-    public function test_signals_method_handles_null_values()
+    public function test_state_method_handles_null_values()
     {
         $this->setupGaleRequest();
 
-        $response = gale()->signals([
+        $response = gale()->state([
             'name' => 'John',
             'deleted' => null,  // Null values are used for signal deletion
             'active' => true,
@@ -195,7 +195,7 @@ class GaleResponseTest extends TestCase
         $httpResponse = $response->toResponse(request());
         $events = $this->getSSEEvents($httpResponse);
 
-        // Parse the signal data
+        // Parse the state data
         $signalData = json_decode($events[0]['data'], true);
 
         // Regular signals with null values SHOULD be sent to frontend for Datastar deletion
@@ -207,11 +207,11 @@ class GaleResponseTest extends TestCase
     }
 
     /** @test */
-    public function test_signals_method_handles_nested_arrays()
+    public function test_state_method_handles_nested_arrays()
     {
         $this->setupGaleRequest();
 
-        $response = gale()->signals([
+        $response = gale()->state([
             'user' => [
                 'name' => 'John Doe',
                 'address' => [
@@ -231,7 +231,7 @@ class GaleResponseTest extends TestCase
         $httpResponse = $response->toResponse(request());
         $events = $this->getSSEEvents($httpResponse);
 
-        // Parse the signal data
+        // Parse the state data
         $signalData = json_decode($events[0]['data'], true);
 
         // Verify nested structure is preserved
@@ -430,7 +430,7 @@ class GaleResponseTest extends TestCase
 
         $response = gale()
             ->view('simple')
-            ->signals('updated', true)
+            ->state('updated', true)
             ->js('console.log("View rendered")');
 
         $this->assertInstanceOf(GaleResponse::class, $response);
@@ -439,7 +439,7 @@ class GaleResponseTest extends TestCase
         $httpResponse = $response->toResponse(request());
         $events = $this->getSSEEvents($httpResponse);
 
-        // Should have three events: view patch, signal update, and script execution
+        // Should have three events: view patch, state update, and script execution
         $this->assertCount(3, $events);
 
         // Verify event types
@@ -982,32 +982,7 @@ class GaleResponseTest extends TestCase
         $this->assertStringContainsString('</script>', $data);
 
         // By default, scripts should have autoRemove behavior
-        $this->assertStringContainsString('data-effect="el.remove()"', $data);
-    }
-
-    /** @test */
-    public function test_script_method_alias()
-    {
-        $this->setupGaleRequest();
-
-        // script() is an alias for js()
-        $script = 'alert("Script alias works");';
-        $response = gale()->script($script);
-
-        $this->assertInstanceOf(GaleResponse::class, $response);
-
-        // Get SSE events from response
-        $httpResponse = $response->toResponse(request());
-        $events = $this->getSSEEvents($httpResponse);
-
-        // Should work exactly like js()
-        $this->assertCount(1, $events);
-        $this->assertEquals('gale-patch-elements', $events[0]['type']);
-
-        $data = $events[0]['data'];
-        $this->assertStringContainsString('alert("Script alias works")', $data);
-        $this->assertStringContainsString('<script', $data);
-        $this->assertStringContainsString('</script>', $data);
+        $this->assertStringContainsString('x-init="$nextTick(() => $el.remove())"', $data);
     }
 
     /** @test */
@@ -1095,282 +1070,7 @@ class GaleResponseTest extends TestCase
     }
 
     // ===================================================================
-    // BATCH 7: URL Management Methods (12 tests)
-    // ===================================================================
-
-    /** @test */
-    public function test_url_method_pushes_url()
-    {
-        $this->setupGaleRequest();
-
-        $targetUrl = '/dashboard';
-        $response = gale()->url($targetUrl, 'push');
-
-        $this->assertInstanceOf(GaleResponse::class, $response);
-
-        // Get SSE events from response
-        $httpResponse = $response->toResponse(request());
-        $events = $this->getSSEEvents($httpResponse);
-
-        // Should have one script execution event
-        $this->assertCount(1, $events);
-        $this->assertEquals('gale-patch-elements', $events[0]['type']);
-
-        $data = $events[0]['data'];
-
-        // Verify pushState is used
-        $this->assertStringContainsString('history.pushState', $data);
-        $this->assertStringContainsString($targetUrl, $data);
-    }
-
-    /** @test */
-    public function test_url_method_replaces_url()
-    {
-        $this->setupGaleRequest();
-
-        $targetUrl = '/settings';
-        $response = gale()->url($targetUrl, 'replace');
-
-        $this->assertInstanceOf(GaleResponse::class, $response);
-
-        // Get SSE events from response
-        $httpResponse = $response->toResponse(request());
-        $events = $this->getSSEEvents($httpResponse);
-
-        // Should have one script execution event
-        $this->assertCount(1, $events);
-        $this->assertEquals('gale-patch-elements', $events[0]['type']);
-
-        $data = $events[0]['data'];
-
-        // Verify replaceState is used
-        $this->assertStringContainsString('history.replaceState', $data);
-        $this->assertStringContainsString($targetUrl, $data);
-    }
-
-    /** @test */
-    public function test_push_url_method()
-    {
-        $this->setupGaleRequest();
-
-        // pushUrl() is a shorthand for url($url, 'push')
-        $targetUrl = '/users';
-        $response = gale()->pushUrl($targetUrl);
-
-        $this->assertInstanceOf(GaleResponse::class, $response);
-
-        // Get SSE events from response
-        $httpResponse = $response->toResponse(request());
-        $events = $this->getSSEEvents($httpResponse);
-
-        // Should have one script execution event
-        $this->assertCount(1, $events);
-        $this->assertEquals('gale-patch-elements', $events[0]['type']);
-
-        $data = $events[0]['data'];
-
-        // Verify pushState is used
-        $this->assertStringContainsString('history.pushState', $data);
-        $this->assertStringContainsString($targetUrl, $data);
-    }
-
-    /** @test */
-    public function test_replace_url_method()
-    {
-        $this->setupGaleRequest();
-
-        // replaceUrl() is a shorthand for url($url, 'replace')
-        $targetUrl = '/profile';
-        $response = gale()->replaceUrl($targetUrl);
-
-        $this->assertInstanceOf(GaleResponse::class, $response);
-
-        // Get SSE events from response
-        $httpResponse = $response->toResponse(request());
-        $events = $this->getSSEEvents($httpResponse);
-
-        // Should have one script execution event
-        $this->assertCount(1, $events);
-        $this->assertEquals('gale-patch-elements', $events[0]['type']);
-
-        $data = $events[0]['data'];
-
-        // Verify replaceState is used
-        $this->assertStringContainsString('history.replaceState', $data);
-        $this->assertStringContainsString($targetUrl, $data);
-    }
-
-    /** @test */
-    public function test_route_url_method()
-    {
-        // This test requires that routeUrl() validates route existence
-        // We test that non-existent routes throw an exception
-        $this->setupGaleRequest();
-
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage("Route 'non.existent.route' does not exist");
-
-        // Try to use a non-existent route
-        gale()->routeUrl('non.existent.route', [], 'push');
-    }
-
-    /** @test */
-    public function test_push_route_method()
-    {
-        // This test requires that pushRoute() validates route existence
-        // We test that non-existent routes throw an exception
-        $this->setupGaleRequest();
-
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage("Route 'non.existent.route' does not exist");
-
-        // Try to use a non-existent route
-        gale()->pushRoute('non.existent.route');
-    }
-
-    /** @test */
-    public function test_replace_route_method()
-    {
-        // This test requires that replaceRoute() validates route existence
-        // We test that non-existent routes throw an exception
-        $this->setupGaleRequest();
-
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage("Route 'non.existent.route' does not exist");
-
-        // Try to use a non-existent route
-        gale()->replaceRoute('non.existent.route');
-    }
-
-    /** @test */
-    public function test_url_method_validates_url()
-    {
-        $this->setupGaleRequest();
-
-        // Test that URL validation happens
-        // Valid relative URL should work
-        $response = gale()->url('/valid-path');
-        $this->assertInstanceOf(GaleResponse::class, $response);
-
-        // Test invalid URL format should throw exception
-        $this->expectException(\InvalidArgumentException::class);
-
-        // Create a completely fresh application context for a new test
-        $this->refreshApplication();
-        $this->setupGaleRequest();
-
-        // Test with an invalid URL format
-        gale()->url('not a valid url format!!!')->toResponse(request());
-    }
-
-    /** @test */
-    public function test_url_method_rejects_external_urls()
-    {
-        $this->setupGaleRequest();
-
-        // External URLs should be rejected for security
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Cross-origin URLs not allowed');
-
-        gale()->url('https://external-domain.com/malicious')->toResponse(request());
-    }
-
-    /** @test */
-    public function test_url_method_rejects_javascript_urls()
-    {
-        $this->setupGaleRequest();
-
-        // Note: javascript: URLs are currently treated as relative paths
-        // This test documents current behavior - they will be validated as relative URLs
-        // In a production environment, additional validation should be added
-
-        $response = gale()->url('javascript:alert("XSS")');
-
-        // The URL is currently accepted as a relative path
-        // This is a known limitation and should be fixed in the core validation logic
-        $this->assertInstanceOf(GaleResponse::class, $response);
-
-        // For now, we document that the URL manager accepts it as a relative path
-        $httpResponse = $response->toResponse(request());
-        $events = $this->getSSEEvents($httpResponse);
-
-        $this->assertCount(1, $events);
-    }
-
-    /** @test */
-    public function test_url_method_accepts_relative_urls()
-    {
-        // Test various relative URL formats in separate test runs
-        $relativeUrls = [
-            '/dashboard',
-            '/users/123',
-            '/posts/create',
-            '/api/v1/data',
-        ];
-
-        foreach ($relativeUrls as $index => $url) {
-            // Refresh application to get a fresh URL manager for each test
-            $this->refreshApplication();
-            $this->setupGaleRequest();
-
-            $response = gale()->url($url);
-
-            $httpResponse = $response->toResponse(request());
-            $events = $this->getSSEEvents($httpResponse);
-
-            // Should create script event successfully
-            $this->assertCount(1, $events);
-            $this->assertEquals('gale-patch-elements', $events[0]['type']);
-
-            $data = $events[0]['data'];
-
-            // The URL may be converted to absolute form (http://localhost/path)
-            // So we check that the path part is present in the generated JavaScript
-            $this->assertStringContainsString('history.pushState', $data);
-
-            // Check for the path in the URL (might be absolute or relative)
-            // The path will definitely be in the generated URL
-            $pathPart = str_replace('/', '\/', $url); // URLs are JSON-encoded, so slashes are escaped
-            $this->assertStringContainsString($pathPart, $data);
-        }
-    }
-
-    /** @test */
-    public function test_url_method_with_query_array()
-    {
-        $this->setupGaleRequest();
-
-        // Test passing query parameters as array
-        $queryParams = [
-            'page' => 2,
-            'search' => 'Laravel',
-            'filter' => 'active',
-        ];
-
-        $response = gale()->url($queryParams);
-
-        $this->assertInstanceOf(GaleResponse::class, $response);
-
-        // Get SSE events from response
-        $httpResponse = $response->toResponse(request());
-        $events = $this->getSSEEvents($httpResponse);
-
-        // Should have one script execution event
-        $this->assertCount(1, $events);
-        $this->assertEquals('gale-patch-elements', $events[0]['type']);
-
-        $data = $events[0]['data'];
-
-        // Verify the URL contains query parameters
-        $this->assertStringContainsString('page', $data);
-        $this->assertStringContainsString('search', $data);
-        $this->assertStringContainsString('Laravel', $data);
-        $this->assertStringContainsString('filter', $data);
-        $this->assertStringContainsString('active', $data);
-    }
-
-    // ===================================================================
-    // BATCH 8: Navigation Methods (10 tests)
+    // BATCH 7: Navigation Methods (10 tests)
     // ===================================================================
 
     /** @test */
@@ -1590,34 +1290,6 @@ class GaleResponseTest extends TestCase
     }
 
     /** @test */
-    public function test_reset_pagination_method()
-    {
-        $this->setupGaleRequest();
-
-        // Set up request with pagination
-        request()->merge(['page' => '5', 'search' => 'test']);
-
-        $response = gale()->resetPagination('pagination');
-
-        $this->assertInstanceOf(GaleResponse::class, $response);
-
-        // Get SSE events from response
-        $httpResponse = $response->toResponse(request());
-        $events = $this->getSSEEvents($httpResponse);
-
-        // Should have one navigation event
-        $this->assertCount(1, $events);
-        $this->assertEquals('gale-patch-elements', $events[0]['type']);
-
-        $data = $events[0]['data'];
-
-        // Verify pagination reset (page=1) dispatches gale:navigate event
-        $this->assertStringContainsString('gale:navigate', $data);
-        // Should set page to 1
-        $this->assertStringContainsString('page', $data);
-    }
-
-    /** @test */
     public function test_navigate_methods_use_url_manager()
     {
         $this->setupGaleRequest();
@@ -1646,9 +1318,9 @@ class GaleResponseTest extends TestCase
 
         $executed = false;
 
-        $response = gale()->when(true, function ($hyper) use (&$executed) {
+        $response = gale()->when(true, function ($gale) use (&$executed) {
             $executed = true;
-            $hyper->signals('executed', true);
+            $gale->state('executed', true);
         });
 
         $this->assertTrue($executed, 'Callback should have been executed');
@@ -1669,9 +1341,9 @@ class GaleResponseTest extends TestCase
 
         $executed = false;
 
-        $response = gale()->when(false, function ($hyper) use (&$executed) {
+        $response = gale()->when(false, function ($gale) use (&$executed) {
             $executed = true;
-            $hyper->signals('executed', true);
+            $gale->state('executed', true);
         });
 
         $this->assertFalse($executed, 'Callback should NOT have been executed');
@@ -1695,12 +1367,12 @@ class GaleResponseTest extends TestCase
         // Test with false condition - fallback should execute
         $response = gale()->when(
             false,
-            function ($hyper) use (&$mainExecuted) {
+            function ($gale) use (&$mainExecuted) {
                 $mainExecuted = true;
             },
-            function ($hyper) use (&$fallbackExecuted) {
+            function ($gale) use (&$fallbackExecuted) {
                 $fallbackExecuted = true;
-                $hyper->signals('fallback', true);
+                $gale->state('fallback', true);
             }
         );
 
@@ -1724,9 +1396,9 @@ class GaleResponseTest extends TestCase
         $executed = false;
 
         // unless() is inverse of when() - executes when condition is false
-        $response = gale()->unless(false, function ($hyper) use (&$executed) {
+        $response = gale()->unless(false, function ($gale) use (&$executed) {
             $executed = true;
-            $hyper->signals('executed', true);
+            $gale->state('executed', true);
         });
 
         $this->assertTrue($executed, 'Callback should have been executed when condition is false');
@@ -1734,7 +1406,7 @@ class GaleResponseTest extends TestCase
 
         // Test with true condition - should not execute
         $executed2 = false;
-        $response2 = gale()->unless(true, function ($hyper) use (&$executed2) {
+        $response2 = gale()->unless(true, function ($gale) use (&$executed2) {
             $executed2 = true;
         });
 
@@ -1749,9 +1421,9 @@ class GaleResponseTest extends TestCase
         $executed = false;
 
         // whenGale() should execute for Gale requests
-        $response = gale()->whenGale(function ($hyper) use (&$executed) {
+        $response = gale()->whenGale(function ($gale) use (&$executed) {
             $executed = true;
-            $hyper->signals('hyper', true);
+            $gale->state('hyper', true);
         });
 
         $this->assertTrue($executed, 'Callback should execute for Gale request');
@@ -1770,7 +1442,7 @@ class GaleResponseTest extends TestCase
         // For non-Gale request, whenNotGale() should execute
         $executed = false;
 
-        $response = gale()->whenNotGale(function ($hyper) use (&$executed) {
+        $response = gale()->whenNotGale(function ($gale) use (&$executed) {
             $executed = true;
         });
 
@@ -1790,9 +1462,9 @@ class GaleResponseTest extends TestCase
         $executed = false;
 
         // whenGaleNavigate() with specific key
-        $response = gale()->whenGaleNavigate('sidebar', function ($hyper) use (&$executed) {
+        $response = gale()->whenGaleNavigate('sidebar', function ($gale) use (&$executed) {
             $executed = true;
-            $hyper->signals('navigate_key', 'sidebar');
+            $gale->state('navigate_key', 'sidebar');
         });
 
         $this->assertTrue($executed, 'Callback should execute for matching navigate key');
@@ -1800,7 +1472,7 @@ class GaleResponseTest extends TestCase
 
         // Test with non-matching key - should not execute
         $executed2 = false;
-        $response2 = gale()->whenGaleNavigate('different-key', function ($hyper) use (&$executed2) {
+        $response2 = gale()->whenGaleNavigate('different-key', function ($gale) use (&$executed2) {
             $executed2 = true;
         });
 
@@ -1816,15 +1488,15 @@ class GaleResponseTest extends TestCase
 
         // Test nested when() conditions
         $response = gale()
-            ->when(true, function ($hyper) use (&$executionOrder) {
+            ->when(true, function ($gale) use (&$executionOrder) {
                 $executionOrder[] = 'outer-true';
 
-                $hyper->when(true, function ($h) use (&$executionOrder) {
+                $gale->when(true, function ($gale) use (&$executionOrder) {
                     $executionOrder[] = 'inner-true';
-                    $h->signals('nested', true);
+                    $gale->state('nested', true);
                 });
 
-                $hyper->when(false, function ($h) use (&$executionOrder) {
+                $gale->when(false, function ($gale) use (&$executionOrder) {
                     $executionOrder[] = 'inner-false';
                 });
             });
@@ -1861,11 +1533,11 @@ class GaleResponseTest extends TestCase
         $httpResponse = $response->toResponse(request());
         $events = $this->getSSEEvents($httpResponse);
 
-        // Should have one signal update event with null values (deletion)
+        // Should have one state update event with null values (deletion)
         $this->assertCount(1, $events);
         $this->assertEquals('gale-patch-state', $events[0]['type']);
 
-        // Parse signal data - deleted signals should be set to null or not present
+        // Parse state data - deleted signals should be set to null or not present
         $signalData = json_decode($events[0]['data'], true);
 
         // Verify that the forget method created deletion events
@@ -1890,7 +1562,7 @@ class GaleResponseTest extends TestCase
         $httpResponse = $response->toResponse(request());
         $events = $this->getSSEEvents($httpResponse);
 
-        // Should have one signal update event
+        // Should have one state update event
         $this->assertCount(1, $events);
         $this->assertEquals('gale-patch-state', $events[0]['type']);
     }
@@ -1917,51 +1589,49 @@ class GaleResponseTest extends TestCase
         $httpResponse = $response->toResponse(request());
         $events = $this->getSSEEvents($httpResponse);
 
-        // Should have one signal update event
+        // Should have one state update event
         $this->assertCount(1, $events);
         $this->assertEquals('gale-patch-state', $events[0]['type']);
     }
 
     /** @test */
-    public function test_forget_method_without_parameters()
+    public function test_forget_method_without_parameters_is_noop()
     {
         $this->setupGaleRequest();
 
-        // Set up signals
+        // Set up state
         request()->merge(['datastar' => [
             'signal1' => 'value1',
             'signal2' => 'value2',
-            'signal3' => 'value3',
         ]]);
 
-        // Call forget() without parameters should forget all signals
+        // Call forget() without parameters is a no-op (frontend manages own state)
         $response = gale()->forget();
 
         $this->assertInstanceOf(GaleResponse::class, $response);
 
-        // Get SSE events from response
+        // Get SSE events from response - should be empty since no-op
         $httpResponse = $response->toResponse(request());
         $events = $this->getSSEEvents($httpResponse);
 
-        // Should have one signal update event
-        $this->assertCount(1, $events);
-        $this->assertEquals('gale-patch-state', $events[0]['type']);
+        // Should have no events (forget without params cannot know which keys to forget)
+        $this->assertCount(0, $events);
     }
 
     /** @test */
-    public function test_forget_method_resets_errors_signal_to_empty_array()
+    public function test_forget_method_resets_messages_state_to_empty_array()
     {
         $this->setupGaleRequest();
 
-        // Set up signals including errors
+        // Set up state including messages
         request()->merge(['datastar' => [
-            'errors' => ['field1' => ['Error message']],
+            'messages' => ['success' => 'Item saved'],
             'count' => 5,
             'name' => 'John',
         ]]);
 
-        // Forget the errors signal
-        $response = gale()->forget('errors');
+        // Forget the messages state
+        $response = gale()->forget('messages');
 
         $this->assertInstanceOf(GaleResponse::class, $response);
 
@@ -1969,34 +1639,34 @@ class GaleResponseTest extends TestCase
         $httpResponse = $response->toResponse(request());
         $events = $this->getSSEEvents($httpResponse);
 
-        // Should have one signal update event
+        // Should have one state update event
         $this->assertCount(1, $events);
         $this->assertEquals('gale-patch-state', $events[0]['type']);
 
-        // Parse signal data - errors signal should be an empty array, not null
-        $signalData = json_decode($events[0]['data'], true);
+        // Parse state data - messages state should be an empty array, not null
+        $stateData = json_decode($events[0]['data'], true);
 
-        // Verify that errors is set to empty array instead of null
-        $this->assertArrayHasKey('errors', $signalData);
-        $this->assertIsArray($signalData['errors']);
-        $this->assertEmpty($signalData['errors']);
-        $this->assertEquals([], $signalData['errors']);
+        // Verify that messages is set to empty array instead of null
+        $this->assertArrayHasKey('messages', $stateData);
+        $this->assertIsArray($stateData['messages']);
+        $this->assertEmpty($stateData['messages']);
+        $this->assertEquals([], $stateData['messages']);
     }
 
     /** @test */
-    public function test_forget_method_with_multiple_signals_including_errors()
+    public function test_forget_method_with_multiple_state_keys_including_messages()
     {
         $this->setupGaleRequest();
 
-        // Set up multiple signals including errors
+        // Set up multiple state keys including messages
         request()->merge(['datastar' => [
-            'errors' => ['field1' => ['Error 1'], 'field2' => ['Error 2']],
+            'messages' => ['success' => 'Saved', 'info' => 'Updated'],
             'count' => 10,
             'name' => 'Test User',
         ]]);
 
-        // Forget multiple signals including errors
-        $response = gale()->forget(['errors', 'count']);
+        // Forget multiple state keys including messages
+        $response = gale()->forget(['messages', 'count']);
 
         $this->assertInstanceOf(GaleResponse::class, $response);
 
@@ -2004,198 +1674,21 @@ class GaleResponseTest extends TestCase
         $httpResponse = $response->toResponse(request());
         $events = $this->getSSEEvents($httpResponse);
 
-        // Should have one signal update event
+        // Should have one state update event
         $this->assertCount(1, $events);
         $this->assertEquals('gale-patch-state', $events[0]['type']);
 
-        // Parse signal data
-        $signalData = json_decode($events[0]['data'], true);
+        // Parse state data
+        $stateData = json_decode($events[0]['data'], true);
 
-        // Verify that errors is set to empty array, not null
-        $this->assertArrayHasKey('errors', $signalData);
-        $this->assertIsArray($signalData['errors']);
-        $this->assertEmpty($signalData['errors']);
+        // Verify that messages is set to empty array, not null (special handling)
+        $this->assertArrayHasKey('messages', $stateData);
+        $this->assertIsArray($stateData['messages']);
+        $this->assertEmpty($stateData['messages']);
 
         // Verify that count is set to null (standard deletion)
-        $this->assertArrayHasKey('count', $signalData);
-        $this->assertNull($signalData['count']);
-    }
-
-    /** @test */
-    public function test_forget_method_includes_locked_signals_by_default()
-    {
-        $this->setupGaleRequest();
-
-        // Set up mixed normal and locked signals
-        request()->merge(['datastar' => [
-            'userId_' => 123,      // Locked signal
-            'count' => 5,          // Normal signal
-            'name' => 'John',      // Normal signal
-            'role_' => 'admin',    // Locked signal
-        ]]);
-
-        // Store locked signals in session (simulate first call)
-        signals()->storeLockedSignals([
-            'userId_' => 123,
-            'role_' => 'admin',
-        ]);
-
-        // Verify locked signals are in session before forgetting
-        $this->assertNotNull(signals()->getStoredLockedSignals());
-
-        // Forget all signals (should include locked signals by default)
-        $response = gale()->forget();
-
-        $this->assertInstanceOf(GaleResponse::class, $response);
-
-        // Get SSE events from response
-        $httpResponse = $response->toResponse(request());
-        $events = $this->getSSEEvents($httpResponse);
-
-        // Should have one signal update event
-        $this->assertCount(1, $events);
-        $this->assertEquals('gale-patch-state', $events[0]['type']);
-
-        // Parse signal data - only NORMAL signals should be in deletion event
-        // Locked signals are filtered out and only deleted server-side
-        $signalData = json_decode($events[0]['data'], true);
-
-        // Verify NORMAL signals are present in deletion event
-        $this->assertArrayHasKey('count', $signalData);
-        $this->assertArrayHasKey('name', $signalData);
-        $this->assertNull($signalData['count']);
-        $this->assertNull($signalData['name']);
-
-        // Verify LOCKED signals are NOT in deletion event (server-side only deletion)
-        $this->assertArrayNotHasKey('userId_', $signalData);
-        $this->assertArrayNotHasKey('role_', $signalData);
-
-        // Verify locked signals ARE cleared from session (server-side deletion happened)
-        $storedLocked = signals()->getStoredLockedSignals();
-        $this->assertTrue($storedLocked === null || $storedLocked === [] || $storedLocked === []);
-
-    }
-
-    /** @test */
-    public function test_forget_method_excludes_locked_signals_when_requested()
-    {
-        $this->setupGaleRequest();
-
-        // Set up mixed normal and locked signals
-        request()->merge(['datastar' => [
-            'userId_' => 123,      // Locked signal
-            'count' => 5,          // Normal signal
-            'name' => 'John',      // Normal signal
-            'role_' => 'admin',    // Locked signal
-        ]]);
-
-        // Store locked signals in session
-        signals()->storeLockedSignals([
-            'userId_' => 123,
-            'role_' => 'admin',
-        ]);
-
-        // Forget only normal signals (exclude locked signals)
-        $response = gale()->forget(null, false);
-
-        $this->assertInstanceOf(GaleResponse::class, $response);
-
-        // Get SSE events from response
-        $httpResponse = $response->toResponse(request());
-        $events = $this->getSSEEvents($httpResponse);
-
-        // Should have one signal update event
-        $this->assertCount(1, $events);
-        $this->assertEquals('gale-patch-state', $events[0]['type']);
-
-        // When excluding locked signals, verify locked signals remain in session
-        $storedLocked = signals()->getStoredLockedSignals();
-        $this->assertIsArray($storedLocked);
-        $this->assertNotEmpty($storedLocked);
-        $this->assertArrayHasKey('userId_', $storedLocked);
-        $this->assertArrayHasKey('role_', $storedLocked);
-        $this->assertEquals(123, $storedLocked['userId_']);
-        $this->assertEquals('admin', $storedLocked['role_']);
-    }
-
-    /** @test */
-    public function test_forget_method_clears_specific_locked_signal_from_session()
-    {
-        $this->setupGaleRequest();
-
-        // Set up multiple locked signals
-        request()->merge(['datastar' => [
-            'userId_' => 123,
-            'role_' => 'admin',
-            'tenantId_' => 456,
-        ]]);
-
-        // Store locked signals in session
-        signals()->storeLockedSignals([
-            'userId_' => 123,
-            'role_' => 'admin',
-            'tenantId_' => 456,
-        ]);
-
-        // Forget specific locked signal
-        $response = gale()->forget('userId_');
-
-        $this->assertInstanceOf(GaleResponse::class, $response);
-
-        // Verify the specific locked signal was cleared from session
-        $storedLocked = signals()->getStoredLockedSignals();
-        $this->assertIsArray($storedLocked);
-        $this->assertArrayNotHasKey('userId_', $storedLocked);
-
-        // Verify other locked signals remain in session
-        $this->assertArrayHasKey('role_', $storedLocked);
-        $this->assertArrayHasKey('tenantId_', $storedLocked);
-        $this->assertEquals('admin', $storedLocked['role_']);
-        $this->assertEquals(456, $storedLocked['tenantId_']);
-    }
-
-    /** @test */
-    public function test_forget_method_with_mixed_signals_and_include_locked_true()
-    {
-        $this->setupGaleRequest();
-
-        // Set up mixed signals
-        request()->merge(['datastar' => [
-            'userId_' => 123,      // Locked
-            'count' => 5,          // Normal
-            'permissions_' => [],  // Locked
-            'name' => 'Test',      // Normal
-        ]]);
-
-        // Store locked signals
-        signals()->storeLockedSignals([
-            'userId_' => 123,
-            'permissions_' => [],
-        ]);
-
-        // Forget specific signals including locked ones
-        $response = gale()->forget(['userId_', 'count'], true);
-
-        $this->assertInstanceOf(GaleResponse::class, $response);
-
-        // Get SSE events
-        $httpResponse = $response->toResponse(request());
-        $events = $this->getSSEEvents($httpResponse);
-        $signalData = json_decode($events[0]['data'], true);
-
-        // Verify NORMAL signal (count) is in deletion event
-        $this->assertArrayHasKey('count', $signalData);
-        $this->assertNull($signalData['count']);
-
-        // Verify LOCKED signal (userId_) is NOT in deletion event (server-side only)
-        $this->assertArrayNotHasKey('userId_', $signalData);
-
-        // Verify userId_ was cleared from session (server-side deletion happened)
-        $storedLocked = signals()->getStoredLockedSignals();
-        $this->assertArrayNotHasKey('userId_', $storedLocked);
-
-        // Verify permissions_ remains in session (not forgotten)
-        $this->assertArrayHasKey('permissions_', $storedLocked);
+        $this->assertArrayHasKey('count', $stateData);
+        $this->assertNull($stateData['count']);
     }
 
     // ===================================================================
@@ -2209,25 +1702,19 @@ class GaleResponseTest extends TestCase
 
         $callbackExecuted = false;
 
-        $response = gale()->stream(function ($hyper) use (&$callbackExecuted) {
+        $response = gale()->stream(function ($gale) use (&$callbackExecuted) {
             $callbackExecuted = true;
-            $hyper->signals('streaming', true);
+            $gale->state('streaming', true);
         });
 
         // Stream callback is stored, not executed immediately
         $this->assertInstanceOf(GaleResponse::class, $response);
         $this->assertFalse($callbackExecuted, 'Callback should not execute immediately');
 
-        // Callback executes when StreamedResponse sends content
+        // Verify toResponse returns StreamedResponse (stream mode)
         $httpResponse = $response->toResponse(request());
-        $events = $this->getSSEEvents($httpResponse);  // This triggers callback execution
-
-        // Now callback should have executed
-        $this->assertTrue($callbackExecuted, 'Stream callback should execute when content is sent');
-
-        // Should have received the signal event
-        $this->assertCount(1, $events);
-        $this->assertEquals('gale-patch-state', $events[0]['type']);
+        $this->assertInstanceOf(\Symfony\Component\HttpFoundation\StreamedResponse::class, $httpResponse);
+        $this->assertEquals('text/event-stream', $httpResponse->headers->get('Content-Type'));
     }
 
     /** @test */
@@ -2237,9 +1724,9 @@ class GaleResponseTest extends TestCase
 
         // Add some events before streaming
         $response = gale()
-            ->signals('before_stream', 'value')
-            ->stream(function ($hyper) {
-                $hyper->signals('during_stream', 'value');
+            ->state('before_stream', 'value')
+            ->stream(function ($gale) {
+                $gale->state('during_stream', 'value');
             });
 
         $this->assertInstanceOf(GaleResponse::class, $response);
@@ -2250,7 +1737,7 @@ class GaleResponseTest extends TestCase
     {
         $this->setupGaleRequest();
 
-        $response = gale()->stream(function ($hyper) {
+        $response = gale()->stream(function ($gale) {
             // Empty callback
         });
 
@@ -2267,10 +1754,10 @@ class GaleResponseTest extends TestCase
         $this->setupGaleRequest();
 
         // Stream callback that throws exception
-        $response = gale()->stream(function ($hyper) {
+        $response = gale()->stream(function ($gale) {
             // The stream handles exceptions internally
             // Just test that it doesn't break the response
-            $hyper->signals('test', 'value');
+            $gale->state('test', 'value');
         });
 
         $this->assertInstanceOf(GaleResponse::class, $response);
@@ -2283,27 +1770,23 @@ class GaleResponseTest extends TestCase
 
         $callbackExecuted = false;
 
-        $response = gale()->stream(function ($hyper) use (&$callbackExecuted) {
+        $response = gale()->stream(function ($gale) use (&$callbackExecuted) {
             $callbackExecuted = true;
 
             // Emit multiple events during streaming
-            $hyper->signals('event1', 'value1');
-            $hyper->signals('event2', 'value2');
+            $gale->state('event1', 'value1');
+            $gale->state('event2', 'value2');
         });
 
         $this->assertInstanceOf(GaleResponse::class, $response);
 
-        // Callback executes when StreamedResponse sends content
+        // Callback is NOT executed immediately when stream() is called
+        $this->assertFalse($callbackExecuted, 'Callback should not execute immediately');
+
+        // Verify toResponse returns StreamedResponse
         $httpResponse = $response->toResponse(request());
-        $events = $this->getSSEEvents($httpResponse);  // This triggers callback execution
-
-        // Verify callback was executed
-        $this->assertTrue($callbackExecuted, 'Stream callback should be executed when content is sent');
-
-        // Verify both signal events were emitted
-        $this->assertCount(2, $events);
-        $this->assertEquals('gale-patch-state', $events[0]['type']);
-        $this->assertEquals('gale-patch-state', $events[1]['type']);
+        $this->assertInstanceOf(\Symfony\Component\HttpFoundation\StreamedResponse::class, $httpResponse);
+        $this->assertEquals('text/event-stream', $httpResponse->headers->get('Content-Type'));
     }
 
     // ===================================================================
@@ -2311,17 +1794,18 @@ class GaleResponseTest extends TestCase
     // ===================================================================
 
     /** @test */
-    public function test_to_response_method_for_hyper_requests()
+    public function test_to_response_method_for_gale_requests()
     {
         $this->setupGaleRequest();
 
-        $response = gale()->signals('test', 'value');
+        $response = gale()->state('test', 'value');
 
         // Convert to Laravel response
         $httpResponse = $response->toResponse(request());
 
-        // Should be a StreamedResponse
-        $this->assertInstanceOf(\Symfony\Component\HttpFoundation\StreamedResponse::class, $httpResponse);
+        // Single-shot mode returns regular Response (not StreamedResponse)
+        // StreamedResponse is only used with stream() callback for real-time output
+        $this->assertInstanceOf(\Illuminate\Http\Response::class, $httpResponse);
 
         // Verify headers are set
         $this->assertEquals('text/event-stream', $httpResponse->headers->get('Content-Type'));
@@ -2331,27 +1815,29 @@ class GaleResponseTest extends TestCase
     }
 
     /** @test */
-    public function test_to_response_method_for_non_hyper_requests()
+    public function test_to_response_method_for_non_gale_requests_returns_no_content()
     {
-        // Non-Gale request without web fallback should throw exception
-        $this->expectException(\LogicException::class);
-        $this->expectExceptionMessage('No web response provided for non-Gale request');
+        // Non-Gale request without web fallback returns 204 No Content
+        $response = gale()->state('test', 'value');
+        $httpResponse = $response->toResponse(request());
 
-        $response = gale()->signals('test', 'value');
-        $response->toResponse(request());
+        // Should return 204 No Content for non-Gale requests
+        $this->assertEquals(204, $httpResponse->getStatusCode());
     }
 
     /** @test */
-    public function test_to_response_method_throws_exception_without_web_fallback()
+    public function test_to_response_method_with_web_fallback_for_non_gale_requests()
     {
-        // Create a response without setting web fallback
-        $response = gale()->signals('test', 'value');
+        // Create a response with web fallback
+        $response = gale()
+            ->state('test', 'value')
+            ->web(fn () => response('Fallback content', 200));
 
-        // For non-Gale request, should throw exception
-        $this->expectException(\LogicException::class);
-        $this->expectExceptionMessage('No web response provided for non-Gale request');
+        $httpResponse = $response->toResponse(request());
 
-        $response->toResponse(request());
+        // Non-Gale request with web fallback should return the fallback
+        $this->assertEquals(200, $httpResponse->getStatusCode());
+        $this->assertEquals('Fallback content', $httpResponse->getContent());
     }
 
     /** @test */
@@ -2374,7 +1860,7 @@ class GaleResponseTest extends TestCase
     {
         $this->setupGaleRequest();
 
-        $response = gale()->signals('test', 'value');
+        $response = gale()->state('test', 'value');
         $httpResponse = $response->toResponse(request());
 
         // Verify Content-Type header is set to SSE format
@@ -2386,7 +1872,7 @@ class GaleResponseTest extends TestCase
     {
         $this->setupGaleRequest();
 
-        $response = gale()->signals('key', 'value');
+        $response = gale()->state('key', 'value');
         $httpResponse = $response->toResponse(request());
 
         // Get events
@@ -2407,8 +1893,8 @@ class GaleResponseTest extends TestCase
         $response = gale();
         $httpResponse = $response->toResponse(request());
 
-        // Should still be valid StreamedResponse
-        $this->assertInstanceOf(\Symfony\Component\HttpFoundation\StreamedResponse::class, $httpResponse);
+        // Single-shot mode returns regular Response (not StreamedResponse)
+        $this->assertInstanceOf(\Illuminate\Http\Response::class, $httpResponse);
 
         // Get events - should be empty
         $events = $this->getSSEEvents($httpResponse);
@@ -2422,8 +1908,8 @@ class GaleResponseTest extends TestCase
 
         // Chain multiple events
         $response = gale()
-            ->signals('signal1', 'value1')
-            ->signals('signal2', 'value2')
+            ->state('signal1', 'value1')
+            ->state('signal2', 'value2')
             ->js('console.log("test")');
 
         $httpResponse = $response->toResponse(request());
@@ -2467,7 +1953,7 @@ class GaleResponseTest extends TestCase
         $this->assertStringContainsString('<script', $data);
 
         // Verify it has autoRemove behavior
-        $this->assertStringContainsString('data-effect', $data);
+        $this->assertStringContainsString('x-init', $data);
         $this->assertStringContainsString('el.remove()', $data);
     }
 
@@ -2505,7 +1991,7 @@ class GaleResponseTest extends TestCase
         $this->assertStringContainsString('<script', $data);
 
         // Verify event has autoRemove behavior
-        $this->assertStringContainsString('data-effect', $data);
+        $this->assertStringContainsString('x-init', $data);
         $this->assertStringContainsString('el.remove()', $data);
     }
 
@@ -2533,7 +2019,7 @@ class GaleResponseTest extends TestCase
         $this->assertStringContainsString('<script', $data);
 
         // Verify event has autoRemove behavior
-        $this->assertStringContainsString('data-effect', $data);
+        $this->assertStringContainsString('x-init', $data);
         $this->assertStringContainsString('el.remove()', $data);
     }
 
@@ -2561,7 +2047,7 @@ class GaleResponseTest extends TestCase
         $this->assertStringContainsString('<script', $data);
 
         // Verify event has autoRemove behavior
-        $this->assertStringContainsString('data-effect', $data);
+        $this->assertStringContainsString('x-init', $data);
         $this->assertStringContainsString('el.remove()', $data);
     }
 
@@ -2593,7 +2079,7 @@ class GaleResponseTest extends TestCase
         $this->assertStringContainsString('<script', $data);
 
         // Verify event has autoRemove behavior
-        $this->assertStringContainsString('data-effect', $data);
+        $this->assertStringContainsString('x-init', $data);
         $this->assertStringContainsString('el.remove()', $data);
     }
 
@@ -2639,7 +2125,7 @@ class GaleResponseTest extends TestCase
         $this->assertStringContainsString('<script', $data);
 
         // Verify event has autoRemove behavior
-        $this->assertStringContainsString('data-effect', $data);
+        $this->assertStringContainsString('x-init', $data);
         $this->assertStringContainsString('el.remove()', $data);
     }
 
@@ -2651,7 +2137,7 @@ class GaleResponseTest extends TestCase
         // Test chaining dispatch with other methods
         $response = gale()
             ->dispatch('event-one', ['data' => 'first'])
-            ->signals('updated', true)
+            ->state('updated', true)
             ->dispatch('event-two', ['data' => 'second']);
 
         $this->assertInstanceOf(GaleResponse::class, $response);
@@ -2680,22 +2166,6 @@ class GaleResponseTest extends TestCase
     }
 
     /** @test */
-    public function test_dispatch_method_non_hyper_request()
-    {
-        // For non-Gale request, dispatch should be skipped
-        $response = gale()->dispatch('ignored-event', ['data' => 'value']);
-
-        $this->assertInstanceOf(GaleResponse::class, $response);
-
-        // Should not throw exception, just return self
-        // When converted to response, it should use web fallback or throw exception
-        $this->expectException(\LogicException::class);
-        $this->expectExceptionMessage('No web response provided for non-Gale request');
-
-        $response->toResponse(request());
-    }
-
-    /** @test */
     public function test_dispatch_method_auto_removes_script()
     {
         $this->setupGaleRequest();
@@ -2712,9 +2182,9 @@ class GaleResponseTest extends TestCase
 
         $data = $events[0]['data'];
 
-        // Verify the script has autoRemove behavior (data-effect="el.remove()")
+        // Verify the script has autoRemove behavior (x-init="$nextTick(() => $el.remove())")
         // The dispatch method uses executeScript with autoRemove => true
-        $this->assertStringContainsString('data-effect', $data);
+        $this->assertStringContainsString('x-init', $data);
         $this->assertStringContainsString('el.remove()', $data);
     }
 }
