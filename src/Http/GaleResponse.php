@@ -774,8 +774,7 @@ class GaleResponse implements Responsable
     protected function overrideRedirectForStream(): void
     {
         app()->bind('redirect', function () {
-            return new class
-            {
+            return new class {
                 /**
                  * @param array<string, mixed> $headers
                  */
@@ -1712,11 +1711,11 @@ class GaleResponse implements Responsable
         }
 
         if (array_keys($state) !== range(0, count($state) - 1)) {
-            return array_map(fn ($key) => (string) $key, array_keys($state));
+            return array_map(fn($key) => (string) $key, array_keys($state));
         }
 
         /** @phpstan-ignore cast.string (State values are converted to strings for consistency) */
-        return array_map(fn ($value) => (string) $value, array_values($state));
+        return array_map(fn($value) => (string) $value, array_values($state));
     }
 
     /**
