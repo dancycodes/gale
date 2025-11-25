@@ -81,6 +81,12 @@ class BladeFragment
         $viewInstance = View::make($view, $data);
         $path = $viewInstance->getPath();
         $content = File::get($path);
+
+        // Normalize line endings BEFORE parsing to ensure offset calculations match
+        // The parser also normalizes internally, but we need the same normalized
+        // content for mb_substr extraction to work correctly on Windows (CRLF)
+        $content = str_replace(["\r\n", "\r"], "\n", $content);
+
         $output = self::captureFragmentFromContent($fragment, $path, $content);
 
         return Blade::render($output, $data);
