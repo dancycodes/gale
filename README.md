@@ -5,134 +5,112 @@
 [![Alpine.js](https://img.shields.io/badge/Alpine.js-3.x-8BC0D0?style=flat-square&logo=alpine.js)](https://alpinejs.dev)
 [![License](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
 
-**Laravel Gale** is a complete reactive frontend framework for Laravel applications that combines server-driven state management with Alpine.js reactivity. Build dynamic, real-time interfaces using Blade templates and Server-Sent Events (SSE) - no JavaScript framework needed.
+**Laravel Gale** is a server-driven reactive framework for Laravel. It combines Server-Sent Events (SSE) with Alpine.js to enable real-time UI updates directly from your Blade templates—no JavaScript framework, no build complexity, no API layer.
+
+This README documents both:
+
+-   **Laravel Gale** — The PHP backend package
+-   **Alpine Gale** — An Alpine.js frontend plugin (bundled with Laravel Gale)
 
 ---
 
 ## Table of Contents
 
--   [Why Laravel Gale?](#why-laravel-gale)
 -   [Quick Start](#quick-start)
 -   [Installation](#installation)
--   [Core Concepts](#core-concepts)
--   [Backend Features (Laravel)](#backend-features-laravel)
-    -   [The `gale()` Helper](#the-gale-helper)
+-   [Architecture](#architecture)
+    -   [Request/Response Flow](#requestresponse-flow)
+    -   [RFC 7386 JSON Merge Patch](#rfc-7386-json-merge-patch)
+    -   [Alpine.js Context Requirement](#alpinejs-context-requirement)
+-   [Backend: Laravel Gale](#backend-laravel-gale)
+    -   [The gale() Helper](#the-gale-helper)
     -   [State Management](#state-management)
     -   [DOM Manipulation](#dom-manipulation)
     -   [Blade Fragments](#blade-fragments)
     -   [Redirects](#redirects)
     -   [Streaming Mode](#streaming-mode)
-    -   [SPA Navigation](#spa-navigation)
-    -   [Custom Events](#custom-events)
+    -   [Navigation](#navigation)
+    -   [Events and JavaScript](#events-and-javascript)
+    -   [Component Targeting](#component-targeting)
     -   [Request Macros](#request-macros)
     -   [Blade Directives](#blade-directives)
     -   [Validation](#validation)
     -   [Route Discovery](#route-discovery)
--   [Frontend Features (Alpine Gale)](#frontend-features-alpine-gale)
+-   [Frontend: Alpine Gale](#frontend-alpine-gale)
     -   [HTTP Magics](#http-magics)
     -   [CSRF Protection](#csrf-protection)
-    -   [Loading States](#loading-states)
-    -   [SPA Navigation Directive](#spa-navigation-directive)
-    -   [Message Display](#message-display)
+    -   [Global State ($gale)](#global-state-gale)
+    -   [Element State ($fetching)](#element-state-fetching)
+    -   [Loading Directives](#loading-directives)
+    -   [Navigation](#navigation-1)
     -   [Component Registry](#component-registry)
     -   [File Uploads](#file-uploads)
+    -   [Message Display](#message-display)
     -   [Polling](#polling)
     -   [Confirmation Dialogs](#confirmation-dialogs)
--   [Advanced Usage](#advanced-usage)
-    -   [Conditional Execution](#conditional-execution)
-    -   [Component State from Backend](#component-state-from-backend)
+-   [Advanced Topics](#advanced-topics)
+    -   [SSE Protocol Specification](#sse-protocol-specification)
+    -   [State Serialization](#state-serialization)
     -   [DOM Morphing Modes](#dom-morphing-modes)
     -   [View Transitions API](#view-transitions-api)
--   [Configuration](#configuration)
--   [Comparison with Alternatives](#comparison-with-alternatives)
+    -   [Conditional Execution](#conditional-execution)
+-   [API Reference](#api-reference)
+    -   [GaleResponse Methods](#galeresponse-methods)
+    -   [GaleRedirect Methods](#galeredirect-methods)
+    -   [Request Macros Reference](#request-macros-reference)
+    -   [Frontend Magics Reference](#frontend-magics-reference)
+    -   [Frontend Directives Reference](#frontend-directives-reference)
+    -   [Request Options Reference](#request-options-reference)
+    -   [SSE Events Reference](#sse-events-reference)
+    -   [Configuration Reference](#configuration-reference)
+-   [Troubleshooting](#troubleshooting)
 -   [Testing](#testing)
--   [Contributing](#contributing)
 -   [License](#license)
-
----
-
-## Why Laravel Gale?
-
-Traditional reactive frameworks require you to:
-
--   Write duplicate logic in JavaScript
--   Manage complex state synchronization
--   Build and maintain APIs
--   Handle SSR/hydration complexity
-
-**Laravel Gale takes a different approach:**
-
-```
-Your Laravel Controller          Your Blade Template
-        |                               |
-        | gale()->state(...)            | x-data, x-text, etc.
-        | gale()->view(...)             |
-        v                               v
-   SSE Response ----------------------> Alpine.js
-        |                               |
-        '------- Reactive UI Updates ---'
-```
-
-**Benefits:**
-
--   **Server-side rendering** - Full SEO support, fast initial load
--   **No build step required** - Works with vanilla Blade templates
--   **Blade-first development** - Use your existing Laravel knowledge
--   **Automatic CSRF** - Built-in Laravel session integration
--   **Real-time updates** - SSE enables push-based reactivity
--   **Progressive enhancement** - Falls back gracefully
--   **Bundled Dependencies** - Alpine.js, Alpine Morph, and Alpine Gale are bundled together
 
 ---
 
 ## Quick Start
 
-Here's a complete counter example in just a few lines:
+A complete counter in 15 lines:
 
-**Route (routes/web.php):**
+**routes/web.php:**
 
 ```php
-use Illuminate\Support\Facades\Route;
-
 Route::get('/counter', fn() => view('counter'));
 
 Route::post('/increment', function () {
-    $count = request()->state('count', 0);
-    return gale()->state('count', $count + 1);
+    return gale()->state('count', request()->state('count', 0) + 1);
 });
 ```
 
-**Blade Template (resources/views/counter.blade.php):**
+**resources/views/counter.blade.php:**
 
 ```html
 <!DOCTYPE html>
 <html>
     <head>
-        <title>Counter</title>
         @gale
     </head>
     <body>
         <div x-data="{ count: 0 }">
-            <p>Count: <span x-text="count"></span></p>
-            <button @click="$postx('/increment')">Increment</button>
+            <span x-text="count"></span>
+            <button @click="$postx('/increment')">+</button>
         </div>
     </body>
 </html>
 ```
 
-That's it! Click the button, and the count updates reactively via SSE.
+Click the button. The count updates via SSE. No page reload, no JavaScript written.
 
 ---
 
 ## Installation
 
-### Step 1: Install the Package
+### Step 1: Install Package
 
 ```bash
 composer require dancycodes/gale
 ```
-
-The package auto-registers with Laravel - no manual service provider registration needed.
 
 ### Step 2: Publish Assets
 
@@ -140,11 +118,11 @@ The package auto-registers with Laravel - no manual service provider registratio
 php artisan vendor:publish --tag=gale-assets
 ```
 
-This publishes the JavaScript bundle to `public/vendor/gale/js/gale.js`.
+Publishes to `public/vendor/gale/js/gale.js`.
 
-### Step 3: Add the Directive
+### Step 3: Add Directive
 
-Add `@gale` to your Blade layout's `<head>`:
+Add `@gale` to your layout's `<head>`:
 
 ```html
 <head>
@@ -152,13 +130,11 @@ Add `@gale` to your Blade layout's `<head>`:
 </head>
 ```
 
-This directive outputs:
+This outputs:
 
--   CSRF meta tag for Laravel session integration
--   Alpine.js with Alpine Morph plugin
--   Alpine Gale plugin (all bundled together)
-
-**That's it!** You're ready to build reactive Laravel applications.
+-   CSRF meta tag
+-   Alpine.js with Morph plugin
+-   Alpine Gale plugin
 
 ### Optional: Publish Configuration
 
@@ -168,107 +144,105 @@ php artisan vendor:publish --tag=gale-config
 
 ---
 
-## Core Concepts
+## Architecture
 
-### How It Works
-
-Laravel Gale uses **Server-Sent Events (SSE)** to push updates from your Laravel backend to Alpine.js components in the browser.
+### Request/Response Flow
 
 ```
-+---------------------------------------------------------------+
-|                        BROWSER                                 |
-|  +----------------------------------------------------------+  |
-|  |  Alpine.js Component (x-data)                            |  |
-|  |    State: { count: 0, user: {...} }                      |  |
-|  |    Template: <span x-text="count">                       |  |
-|  +----------------------------------------------------------+  |
-|                           |                                    |
-|                           | $postx('/increment')               |
-|                           v                                    |
-|  +----------------------------------------------------------+  |
-|  |  HTTP Request                                            |  |
-|  |    Headers: Gale-Request, X-CSRF-TOKEN                   |  |
-|  |    Body: { count: 0, user: {...} }  (serialized state)   |  |
-|  +----------------------------------------------------------+  |
-+---------------------------------------------------------------+
-                            |
-                            v
-+---------------------------------------------------------------+
-|                      LARAVEL SERVER                            |
-|  +----------------------------------------------------------+  |
-|  |  Controller                                              |  |
-|  |    $count = request()->state('count');                   |  |
-|  |    return gale()->state('count', $count + 1);            |  |
-|  +----------------------------------------------------------+  |
-|                           |                                    |
-|                           v                                    |
-|  +----------------------------------------------------------+  |
-|  |  SSE Response (text/event-stream)                        |  |
-|  |    event: gale-patch-state                               |  |
-|  |    data: state {"count":1}                               |  |
-|  +----------------------------------------------------------+  |
-+---------------------------------------------------------------+
-                            |
-                            v
-+---------------------------------------------------------------+
-|  Alpine.js receives SSE event and merges state                 |
-|    State: { count: 1, user: {...} }                            |
-|    UI automatically updates via Alpine reactivity              |
-+---------------------------------------------------------------+
+┌─────────────────────────────────────────────────────────────┐
+│                         BROWSER                              │
+│  ┌────────────────────────────────────────────────────────┐ │
+│  │ Alpine.js Component (x-data)                           │ │
+│  │   State: { count: 0, user: {...} }                     │ │
+│  └────────────────────────────────────────────────────────┘ │
+│                           │                                  │
+│                           │ $postx('/increment')             │
+│                           ▼                                  │
+│  ┌────────────────────────────────────────────────────────┐ │
+│  │ HTTP Request                                           │ │
+│  │   Headers: Gale-Request, X-CSRF-TOKEN                  │ │
+│  │   Body: { count: 0, user: {...} }  (serialized state)  │ │
+│  └────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│                      LARAVEL SERVER                          │
+│  ┌────────────────────────────────────────────────────────┐ │
+│  │ Controller                                             │ │
+│  │   $count = request()->state('count');                  │ │
+│  │   return gale()->state('count', $count + 1);           │ │
+│  └────────────────────────────────────────────────────────┘ │
+│                           │                                  │
+│                           ▼                                  │
+│  ┌────────────────────────────────────────────────────────┐ │
+│  │ SSE Response (text/event-stream)                       │ │
+│  │   event: gale-patch-state                              │ │
+│  │   data: state {"count":1}                              │ │
+│  └────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│ Alpine.js receives SSE, merges state via RFC 7386           │
+│   State: { count: 1, user: {...} }                          │
+│   UI reactively updates                                      │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ### RFC 7386 JSON Merge Patch
 
-State updates use **RFC 7386 JSON Merge Patch** semantics:
+State updates follow RFC 7386:
 
--   Values are merged/updated: `{ count: 5 }` sets count to 5
--   `null` deletes a property: `{ count: null }` removes count
--   Nested objects are recursively merged
+| Server Sends                       | Current State                                    | Result                                           |
+| ---------------------------------- | ------------------------------------------------ | ------------------------------------------------ |
+| `{ count: 5 }`                     | `{ count: 0, name: "John" }`                     | `{ count: 5, name: "John" }`                     |
+| `{ name: null }`                   | `{ count: 0, name: "John" }`                     | `{ count: 0 }`                                   |
+| `{ user: { email: "new@x.com" } }` | `{ user: { name: "John", email: "old@x.com" } }` | `{ user: { name: "John", email: "new@x.com" } }` |
 
-### Important: Alpine.js Context Requirement
+-   **Values merge**: Sent values replace existing values
+-   **Null deletes**: Sending `null` removes the property
+-   **Deep merge**: Nested objects merge recursively
 
-**All Alpine Gale frontend features require an Alpine.js context.** This means:
+### Alpine.js Context Requirement
+
+All Alpine Gale features require an Alpine.js context:
 
 ```html
-<!-- CORRECT: Inside x-data -->
+<!-- Works: Inside x-data -->
 <div x-data="{ count: 0 }">
-    <button @click="$postx('/increment')">Works!</button>
+    <button @click="$postx('/increment')">+</button>
 </div>
 
-<!-- CORRECT: Using x-init for side effects -->
-<div x-init="$get('/load-data')">Loading...</div>
+<!-- Works: x-init provides context -->
+<div x-init="$get('/load')">Loading...</div>
 
-<!-- INCORRECT: No Alpine context -->
-<button @click="$postx('/increment')">Won't work!</button>
+<!-- Fails: No Alpine context -->
+<button @click="$postx('/increment')">Broken</button>
 ```
 
 ---
 
-## Backend Features (Laravel)
+## Backend: Laravel Gale
 
-### The `gale()` Helper
+### The gale() Helper
 
-The `gale()` helper returns a singleton `GaleResponse` instance that provides a fluent API for building SSE responses.
+Returns a singleton `GaleResponse` instance with fluent API:
 
 ```php
-// Basic usage
-return gale()->state('count', 42);
-
-// Chaining multiple operations
 return gale()
-    ->state('count', $count + 1)
-    ->state('lastUpdated', now()->toISOString())
-    ->messages(['success' => 'Counter incremented!']);
-
-// With view rendering
-return gale()
-    ->view('partials.counter', ['count' => $count])
-    ->state('loading', false);
+    ->state('count', 42)
+    ->state('updated', now()->toISOString())
+    ->messages(['success' => 'Saved!']);
 ```
+
+The same instance accumulates events throughout the request, then streams them as SSE.
 
 ### State Management
 
-#### Setting State
+#### state()
+
+Set state values to merge into Alpine component:
 
 ```php
 // Single key-value
@@ -278,216 +252,327 @@ gale()->state('count', 42);
 gale()->state([
     'count' => 42,
     'user' => ['name' => 'John', 'email' => 'john@example.com'],
-    'loading' => false,
 ]);
 
-// Nested updates (merges with existing)
-gale()->state('user', [
-    'email' => 'new@example.com'  // Only updates email, keeps name
-]);
+// Nested update (merges with existing)
+gale()->state('user.email', 'new@example.com');
 ```
 
-#### Forgetting State
+**Options:**
 
 ```php
-// Remove specific key (sends null per RFC 7386)
+// Only set if key doesn't exist in component state
+gale()->state('defaults', ['theme' => 'dark'], ['onlyIfMissing' => true]);
+```
+
+| Option          | Type | Default | Description                        |
+| --------------- | ---- | ------- | ---------------------------------- |
+| `onlyIfMissing` | bool | `false` | Only set if property doesn't exist |
+
+#### forget()
+
+Remove state properties (sends `null` per RFC 7386):
+
+```php
+// Single key
 gale()->forget('tempData');
 
-// Remove multiple keys
-gale()->forget(['tempData', 'cache']);
+// Multiple keys
+gale()->forget(['tempData', 'cache', 'draft']);
 ```
 
-#### Messages State
+#### messages()
 
-Messages are a special state for displaying validation errors, success messages, and notifications:
+Set the `messages` state object (commonly used for validation):
 
 ```php
-// Set messages
 gale()->messages([
     'email' => 'Invalid email address',
-    'name' => 'Name is required',
+    'password' => 'Password too short',
 ]);
 
-// Success message
-gale()->messages(['_success' => 'Profile saved successfully!']);
+// Success pattern
+gale()->messages(['_success' => 'Profile saved!']);
+```
 
-// Clear all messages
+#### clearMessages()
+
+Clear all messages (sends empty object):
+
+```php
 gale()->clearMessages();
 ```
 
 ### DOM Manipulation
 
-#### Rendering Views
+#### view()
+
+Render a Blade view and patch it into the DOM:
 
 ```php
-// Render and patch a complete view
+// Basic: morphs by matching element IDs
 gale()->view('partials.user-card', ['user' => $user]);
 
-// With patching options
-gale()->view('partials.list-item', ['item' => $item], [
+// With selector and mode
+gale()->view('partials.item', ['item' => $item], [
     'selector' => '#items-list',
     'mode' => 'append',
 ]);
 
 // As web fallback for non-Gale requests
-gale()->view('dashboard', ['data' => $data], web: true);
+gale()->view('dashboard', $data, web: true);
 ```
 
-#### Raw HTML Manipulation
+**Options:**
+
+| Option              | Type   | Default   | Description                     |
+| ------------------- | ------ | --------- | ------------------------------- |
+| `selector`          | string | `null`    | CSS selector for target element |
+| `mode`              | string | `'morph'` | DOM patching mode               |
+| `useViewTransition` | bool   | `false`   | Enable View Transitions API     |
+| `settle`            | int    | `0`       | Delay (ms) before patching      |
+| `limit`             | int    | `null`    | Max elements to patch           |
+
+#### fragment()
+
+Render only a named fragment from a Blade view:
 
 ```php
-// Replace content
-gale()->html('<div id="content">New content</div>');
+gale()->fragment('todos', 'todo-items', ['todos' => $todos]);
 
-// With selector and mode
-gale()->append('#list', '<li>New item</li>');
-gale()->prepend('#list', '<li>First item</li>');
-gale()->before('#target', '<div>Before element</div>');
-gale()->after('#target', '<div>After element</div>');
-gale()->inner('#container', '<p>New inner content</p>');
-gale()->outer('#element', '<div id="element">Replaced</div>');
-gale()->replace('#old', '<div id="new">Replacement</div>');
-gale()->remove('.deprecated-items');
+// With options
+gale()->fragment('todos', 'todo-items', ['todos' => $todos], [
+    'selector' => '#todo-list',
+    'mode' => 'morph',
+]);
 ```
 
-### Blade Fragments
-
-Fragments allow you to render only specific parts of a Blade view, avoiding full view compilation:
-
-**Define fragments in your Blade template:**
+**Define fragments in Blade:**
 
 ```blade
-<!-- resources/views/todos.blade.php -->
 <div id="todo-list">
     @fragment('todo-items')
     @foreach($todos as $todo)
-        <div class="todo-item" id="todo-{{ $todo->id }}">
-            {{ $todo->title }}
-        </div>
+        <div id="todo-{{ $todo->id }}">{{ $todo->title }}</div>
     @endforeach
     @endfragment
 </div>
-
-@fragment('todo-count')
-<span id="count">{{ $todos->count() }} items</span>
-@endfragment
 ```
 
-**Render fragments from your controller:**
+#### fragments()
+
+Render multiple fragments at once:
 
 ```php
-// Render single fragment
-gale()->fragment('todos', 'todo-items', ['todos' => $todos]);
-
-// Render multiple fragments
 gale()->fragments([
     [
         'view' => 'todos',
         'fragment' => 'todo-items',
         'data' => ['todos' => $todos],
-        'options' => ['selector' => '#todo-list', 'mode' => 'morph'],
+        'options' => ['selector' => '#todo-list'],
     ],
     [
         'view' => 'todos',
         'fragment' => 'todo-count',
-        'data' => ['todos' => $todos],
+        'data' => ['count' => $todos->count()],
     ],
+]);
+```
+
+#### html()
+
+Patch raw HTML into the DOM:
+
+```php
+gale()->html('<div id="content">New content</div>');
+
+// With options
+gale()->html('<li>New item</li>', [
+    'selector' => '#list',
+    'mode' => 'append',
+]);
+```
+
+#### DOM Convenience Methods
+
+```php
+gale()->append('#list', '<li>Last</li>');
+gale()->prepend('#list', '<li>First</li>');
+gale()->before('#target', '<div>Before</div>');
+gale()->after('#target', '<div>After</div>');
+gale()->inner('#container', '<p>Inner content</p>');
+gale()->outer('#element', '<div id="element">Replaced</div>');
+gale()->replace('#old', '<div id="new">New</div>');
+gale()->remove('.deprecated');
+```
+
+| Method                      | Equivalent Mode   |
+| --------------------------- | ----------------- |
+| `append($selector, $html)`  | `mode: 'append'`  |
+| `prepend($selector, $html)` | `mode: 'prepend'` |
+| `before($selector, $html)`  | `mode: 'before'`  |
+| `after($selector, $html)`   | `mode: 'after'`   |
+| `inner($selector, $html)`   | `mode: 'inner'`   |
+| `outer($selector, $html)`   | `mode: 'outer'`   |
+| `replace($selector, $html)` | `mode: 'replace'` |
+| `remove($selector)`         | `mode: 'remove'`  |
+
+### Blade Fragments
+
+Fragments extract specific sections from Blade views without rendering the entire template.
+
+**Defining fragments:**
+
+```blade
+{{-- resources/views/dashboard.blade.php --}}
+<div class="dashboard">
+    @fragment('stats')
+    <div id="stats">
+        <span>Users: {{ $userCount }}</span>
+        <span>Orders: {{ $orderCount }}</span>
+    </div>
+    @endfragment
+
+    @fragment('recent-orders')
+    <ul id="recent-orders">
+        @foreach($recentOrders as $order)
+            <li>{{ $order->number }}</li>
+        @endforeach
+    </ul>
+    @endfragment
+</div>
+```
+
+**Rendering fragments:**
+
+```php
+// Single fragment
+gale()->fragment('dashboard', 'stats', [
+    'userCount' => User::count(),
+    'orderCount' => Order::count(),
+]);
+
+// Multiple fragments
+gale()->fragments([
+    ['view' => 'dashboard', 'fragment' => 'stats', 'data' => $statsData],
+    ['view' => 'dashboard', 'fragment' => 'recent-orders', 'data' => $ordersData],
 ]);
 ```
 
 ### Redirects
 
-The redirect builder provides full-page browser redirects with Laravel session flash support:
+Full-page browser redirects with session flash support:
 
 ```php
 // Basic redirect
 return gale()->redirect('/dashboard');
 
 // With flash data
-return gale()->redirect('/login')
-    ->with('message', 'Please log in to continue')
-    ->with('intended', request()->url());
+return gale()->redirect('/dashboard')
+    ->with('message', 'Welcome back!')
+    ->with(['key' => 'value', 'another' => 'data']);
 
-// With validation errors
+// With validation errors and input
 return gale()->redirect('/register')
     ->withErrors($validator)
     ->withInput();
-
-// Special redirects
-return gale()->redirect('/dashboard')->back('/');      // Go back with fallback
-return gale()->redirect('/dashboard')->refresh();      // Refresh current page
-return gale()->redirect('/dashboard')->home();         // Go to root URL
-return gale()->redirect('/dashboard')->route('home');  // Named route
-return gale()->redirect('/dashboard')->intended('/');  // Auth intended URL
-return gale()->redirect('/dashboard')->forceReload();  // Hard reload
 ```
+
+#### GaleRedirect Methods
+
+```php
+$redirect = gale()->redirect('/url');
+
+// Flash data
+$redirect->with('key', 'value');
+$redirect->with(['key' => 'value']);
+$redirect->withInput();
+$redirect->withInput(['name', 'email']);
+$redirect->withErrors($validator);
+
+// URL modifiers
+$redirect->back('/fallback');
+$redirect->backOr('route.name', ['param' => 'value']);
+$redirect->refresh(preserveQuery: true, preserveFragment: false);
+$redirect->home();
+$redirect->route('route.name', ['id' => 1]);
+$redirect->intended('/default');
+$redirect->forceReload(bypassCache: false);
+```
+
+| Method                       | Description                            |
+| ---------------------------- | -------------------------------------- |
+| `with($key, $value)`         | Flash data to session                  |
+| `withInput($input)`          | Flash form input for repopulation      |
+| `withErrors($errors)`        | Flash validation errors                |
+| `back($fallback)`            | Redirect to previous URL with fallback |
+| `backOr($route, $params)`    | Back with named route fallback         |
+| `refresh($query, $fragment)` | Reload current page                    |
+| `home()`                     | Redirect to root URL                   |
+| `route($name, $params)`      | Redirect to named route                |
+| `intended($default)`         | Redirect to auth intended URL          |
+| `forceReload($bypass)`       | Hard reload via JavaScript             |
 
 ### Streaming Mode
 
-For long-running operations, use streaming mode to send updates in real-time:
+For long-running operations, stream events in real-time:
 
 ```php
 return gale()->stream(function ($gale) {
     $users = User::cursor();
-    $processed = 0;
     $total = User::count();
+    $processed = 0;
 
     foreach ($users as $user) {
-        // Process user...
         $user->processExpensiveOperation();
-
-        // Send progress update immediately
         $processed++;
+
+        // Sent immediately
         $gale->state('progress', [
             'current' => $processed,
             'total' => $total,
-            'percentage' => round(($processed / $total) * 100),
-        ]);
-
-        // Optional: Update the progress bar fragment
-        $gale->fragment('import', 'progress-bar', [
-            'percentage' => round(($processed / $total) * 100),
+            'percent' => round(($processed / $total) * 100),
         ]);
     }
 
-    // Final update
-    $gale->state([
-        'importing' => false,
-        'complete' => true,
-    ]);
-    $gale->messages(['_success' => "Imported {$total} users successfully!"]);
+    $gale->state('complete', true);
+    $gale->messages(['_success' => "Processed {$total} users"]);
 });
 ```
 
-**Features in streaming mode:**
+**Streaming features:**
 
--   Events are sent immediately as they're added
--   `dd()` and `dump()` output is captured and displayed
--   Exceptions are rendered with full stack traces
--   Redirects work via JavaScript navigation
+-   Events sent immediately as they're added
+-   `dd()` and `dump()` output captured and displayed
+-   Exceptions rendered with stack traces
+-   Redirects work via JavaScript
 
-### SPA Navigation
+### Navigation
 
-Navigate programmatically from the backend:
+Trigger SPA navigation from the backend:
 
 ```php
-// Basic navigation
+// Basic navigation (pushes to history)
 gale()->navigate('/users');
 
-// With navigation key (for targeted updates)
+// With navigation key
 gale()->navigate('/users', 'main-content');
 
-// With query parameters merged
-gale()->navigateMerge(['page' => 2], 'pagination');
+// Navigate with explicit merge control
+gale()->navigateWith('/users', 'main', merge: true);
 
-// Clean navigation (no merge)
-gale()->navigateClean('/users?page=1');
+// Merge query params
+gale()->navigateMerge(['page' => 2]);
+gale()->navigateMerge(['sort' => 'name'], 'table');
 
-// Preserve only specific params
+// Clean navigation (no param merging)
+gale()->navigateClean('/users');
+
+// Keep only specific params
 gale()->navigateOnly('/search', ['q', 'category']);
 
-// Preserve all except specific params
-gale()->navigateExcept('/search', ['page']);
+// Keep all except specific params
+gale()->navigateExcept('/search', ['page', 'cursor']);
 
 // Replace history instead of push
 gale()->navigateReplace('/users');
@@ -497,17 +582,35 @@ gale()->updateQueries(['sort' => 'name', 'order' => 'asc']);
 
 // Clear specific query parameters
 gale()->clearQueries(['filter', 'search']);
+
+// Full page reload
+gale()->reload();
 ```
 
-### Custom Events
+| Method                             | Description                          |
+| ---------------------------------- | ------------------------------------ |
+| `navigate($url, $key)`             | Navigate to URL with optional key    |
+| `navigateWith($url, $key, $merge)` | Navigate with explicit merge control |
+| `navigateMerge($params, $key)`     | Merge query params into current URL  |
+| `navigateClean($url)`              | Navigate without merging params      |
+| `navigateOnly($url, $keep)`        | Keep only specified params           |
+| `navigateExcept($url, $remove)`    | Remove specified params              |
+| `navigateReplace($url)`            | Replace history entry                |
+| `updateQueries($params)`           | Update query params in place         |
+| `clearQueries($keys)`              | Remove query params                  |
+| `reload()`                         | Full page reload                     |
 
-Dispatch browser events for inter-component communication:
+### Events and JavaScript
+
+#### dispatch()
+
+Dispatch custom DOM events:
 
 ```php
-// Window event
+// Window-level event
 gale()->dispatch('user-updated', ['id' => $user->id]);
 
-// Targeted to specific elements
+// Targeted to selector
 gale()->dispatch('refresh', ['section' => 'cart'], [
     'selector' => '.shopping-cart',
 ]);
@@ -516,22 +619,76 @@ gale()->dispatch('refresh', ['section' => 'cart'], [
 gale()->dispatch('notification', ['message' => 'Saved!'], [
     'bubbles' => true,
     'cancelable' => true,
+    'composed' => false,
 ]);
 ```
 
 **Listen in Alpine:**
 
 ```html
-<div x-data @user-updated.window="fetchUser($event.detail.id)">...</div>
+<div x-data @user-updated.window="handleUpdate($event.detail)"></div>
+```
+
+| Option       | Type   | Default | Description              |
+| ------------ | ------ | ------- | ------------------------ |
+| `selector`   | string | `null`  | Target element(s)        |
+| `bubbles`    | bool   | `true`  | Event bubbles up         |
+| `cancelable` | bool   | `true`  | Event can be canceled    |
+| `composed`   | bool   | `false` | Event crosses shadow DOM |
+
+#### js()
+
+Execute JavaScript in the browser:
+
+```php
+gale()->js('console.log("Hello from server")');
+
+gale()->js('myApp.showNotification("Saved!")', [
+    'autoRemove' => true,
+]);
+```
+
+| Option       | Type | Default | Description                           |
+| ------------ | ---- | ------- | ------------------------------------- |
+| `autoRemove` | bool | `false` | Remove script element after execution |
+
+### Component Targeting
+
+Target specific named Alpine components:
+
+#### componentState()
+
+Update a component's state by name:
+
+```php
+gale()->componentState('cart', [
+    'items' => $cartItems,
+    'total' => $total,
+]);
+
+// Only set if property doesn't exist
+gale()->componentState('cart', ['currency' => 'USD'], [
+    'onlyIfMissing' => true,
+]);
+```
+
+#### componentMethod()
+
+Invoke a method on a named component:
+
+```php
+gale()->componentMethod('cart', 'recalculate');
+gale()->componentMethod('form', 'reset');
+gale()->componentMethod('calculator', 'setValues', [10, 20, 30]);
 ```
 
 ### Request Macros
 
-Laravel Gale registers several helpful macros on the Request object:
+Laravel Gale registers these macros on the Request object:
 
-#### `isGale()`
+#### isGale()
 
-Check if the current request is a Gale request:
+Check if the request is a Gale request:
 
 ```php
 if (request()->isGale()) {
@@ -540,77 +697,74 @@ if (request()->isGale()) {
 return view('page', compact('data'));
 ```
 
-#### `state()`
+#### state()
 
 Access state sent from the Alpine component:
 
 ```php
-// Get all state
+// All state
 $state = request()->state();
 
-// Get specific key with default
+// Specific key with default
 $count = request()->state('count', 0);
 
-// Get nested value
+// Nested value (dot notation)
 $email = request()->state('user.email');
 ```
 
-#### `isGaleNavigate()`
+#### isGaleNavigate()
 
-Check if the request is a navigation request:
+Check if request is a navigation request:
 
 ```php
+// Any navigate request
 if (request()->isGaleNavigate()) {
-    // Return only the main content
-    return gale()->fragment('page', 'main-content', $data);
+    return gale()->fragment('page', 'content', $data);
 }
-```
 
-#### `isGaleNavigate($key)`
-
-Check for specific navigation key:
-
-```php
+// Specific key
 if (request()->isGaleNavigate('sidebar')) {
     return gale()->fragment('page', 'sidebar', $data);
 }
 
+// Multiple keys (matches any)
 if (request()->isGaleNavigate(['main', 'sidebar'])) {
-    return gale()->fragments([...]);
+    // ...
 }
 ```
 
-#### `galeNavigateKey()` / `galeNavigateKeys()`
+#### galeNavigateKey() / galeNavigateKeys()
 
 Get the navigation key(s):
 
 ```php
-$key = request()->galeNavigateKey();      // 'sidebar' or null
-$keys = request()->galeNavigateKeys();    // ['sidebar', 'main']
+$key = request()->galeNavigateKey();     // 'sidebar' or null
+$keys = request()->galeNavigateKeys();   // ['sidebar', 'main'] or []
 ```
 
-#### `validateState()`
+#### validateState()
 
-Validate state with reactive message response:
+Validate state with automatic SSE error response:
 
 ```php
 $validated = request()->validateState([
     'email' => 'required|email',
     'name' => 'required|min:2',
 ], [
-    'email.required' => 'Please enter your email',
-    'email.email' => 'Invalid email format',
+    'email.required' => 'Email is required',
 ]);
 
-// On validation failure, automatically sends messages via SSE
-// On success, returns validated data and clears messages
+// On failure: throws GaleMessageException (SSE error response)
+// On success: returns validated data, clears messages for validated fields
 ```
+
+The validation uses selective clearing—only messages for validated fields are cleared, preserving other messages.
 
 ### Blade Directives
 
-#### `@gale`
+#### @gale
 
-Include the Gale JavaScript bundle and CSRF meta tag:
+Include the JavaScript bundle and CSRF meta tag:
 
 ```blade
 <head>
@@ -621,25 +775,11 @@ Include the Gale JavaScript bundle and CSRF meta tag:
 Outputs:
 
 ```html
-<meta name="csrf-token" content="your-csrf-token" />
+<meta name="csrf-token" content="..." />
 <script type="module" src="/vendor/gale/js/gale.js"></script>
 ```
 
-#### `@ifgale` / `@else`
-
-Conditional rendering based on request type:
-
-```blade
-@ifgale
-    {{-- Only rendered for Gale requests --}}
-    <div id="content">{{ $content }}</div>
-@else
-    {{-- Only rendered for regular requests --}}
-    @include('layouts.full-page')
-@endifgale
-```
-
-#### `@fragment` / `@endfragment`
+#### @fragment / @endfragment
 
 Define extractable fragments:
 
@@ -649,29 +789,44 @@ Define extractable fragments:
 @endfragment
 ```
 
+#### @ifgale / @else / @endifgale
+
+Conditional rendering based on request type:
+
+```blade
+@ifgale
+    {{-- Gale request: partial content --}}
+    <div id="content">{{ $content }}</div>
+@else
+    {{-- Regular request: full page --}}
+    @include('layouts.app')
+@endifgale
+```
+
 ### Validation
 
-Gale provides seamless validation integration with reactive message display:
+#### Using validateState Macro
 
 ```php
-// In your controller
 public function store(Request $request)
 {
-    // Method 1: Using validateState macro
     $validated = $request->validateState([
         'name' => 'required|min:2|max:255',
         'email' => 'required|email|unique:users',
-        'password' => 'required|min:8|confirmed',
     ]);
-
-    // If validation fails, messages are automatically sent
-    // If validation passes, messages are cleared
 
     User::create($validated);
     return gale()->messages(['_success' => 'Account created!']);
 }
+```
 
-// Method 2: Manual message handling
+#### Using GaleMessageException
+
+For custom validation flows:
+
+```php
+use Dancycodes\Gale\Exceptions\GaleMessageException;
+
 public function update(Request $request)
 {
     $validator = Validator::make($request->state(), [
@@ -679,31 +834,38 @@ public function update(Request $request)
     ]);
 
     if ($validator->fails()) {
-        return gale()->messages(
-            $validator->errors()->toArray()
-        );
+        throw new GaleMessageException($validator);
     }
 
     // Process...
-    return gale()->clearMessages();
 }
+```
+
+#### Manual Message Handling
+
+```php
+if ($validator->fails()) {
+    return gale()->messages($validator->errors()->toArray());
+}
+
+// On success
+return gale()->clearMessages();
 ```
 
 ### Route Discovery
 
-Gale includes an optional automatic route discovery system:
+Optional attribute-based route discovery:
 
-**Enable in config/gale.php:**
+#### Enable in Configuration
 
 ```php
+// config/gale.php
 return [
     'route_discovery' => [
         'enabled' => true,
-
         'discover_controllers_in_directory' => [
             app_path('Http/Controllers'),
         ],
-
         'discover_views_in_directory' => [
             'docs' => resource_path('views/docs'),
         ],
@@ -711,111 +873,194 @@ return [
 ];
 ```
 
-**Use attributes in controllers:**
+#### Controller Attributes
 
 ```php
 use Dancycodes\Gale\Routing\Attributes\Route;
 use Dancycodes\Gale\Routing\Attributes\Prefix;
 use Dancycodes\Gale\Routing\Attributes\Where;
+use Dancycodes\Gale\Routing\Attributes\DoNotDiscover;
+use Dancycodes\Gale\Routing\Attributes\WithTrashed;
 
 #[Prefix('/admin')]
 class UserController extends Controller
 {
-    #[Route('GET', '/users')]
-    public function index() { ... }
+    #[Route('GET', '/users', name: 'admin.users.index')]
+    public function index() { }
 
-    #[Route('GET', '/users/{id}', name: 'users.show')]
-    #[Where('id', '[0-9]+')]
-    public function show($id) { ... }
+    #[Route('GET', '/users/{id}', name: 'admin.users.show')]
+    #[Where('id', Where::NUMERIC)]
+    #[WithTrashed]
+    public function show($id) { }
+
+    #[Route(['GET', 'POST'], '/users/search')]
+    public function search() { }
+
+    #[DoNotDiscover]
+    public function internalMethod() { }
 }
 ```
 
+#### Route Attribute Options
+
+| Attribute          | Parameters                                                      | Description                 |
+| ------------------ | --------------------------------------------------------------- | --------------------------- |
+| `#[Route]`         | `methods`, `uri`, `name`, `middleware`, `domain`, `withTrashed` | Define route                |
+| `#[Prefix]`        | `prefix`                                                        | URL prefix for class        |
+| `#[Where]`         | `param`, `pattern`                                              | Route parameter constraint  |
+| `#[DoNotDiscover]` | —                                                               | Exclude from discovery      |
+| `#[WithTrashed]`   | —                                                               | Include soft-deleted models |
+
+**Where Constants:**
+
+| Constant              | Pattern        |
+| --------------------- | -------------- |
+| `Where::ALPHA`        | `[a-zA-Z]+`    |
+| `Where::NUMERIC`      | `[0-9]+`       |
+| `Where::ALPHANUMERIC` | `[a-zA-Z0-9]+` |
+| `Where::UUID`         | UUID pattern   |
+
 ---
 
-## Frontend Features (Alpine Gale)
+## Frontend: Alpine Gale
 
-**Important:** All frontend features require an Alpine.js context (`x-data` or `x-init`).
+All frontend features require an Alpine.js context (`x-data` or `x-init`).
 
 ### HTTP Magics
-
-Alpine Gale provides magic methods for making HTTP requests that automatically serialize component state and handle SSE responses:
 
 #### Basic HTTP Methods
 
 ```html
-<div x-data="{ count: 0, user: { name: 'John' } }">
-    <!-- GET request -->
-    <button @click="$get('/api/data')">Load Data</button>
-
-    <!-- POST request -->
-    <button @click="$post('/api/save')">Save</button>
-
-    <!-- PATCH request -->
-    <button @click="$patch('/api/update')">Update</button>
-
-    <!-- PUT request -->
-    <button @click="$put('/api/replace')">Replace</button>
-
-    <!-- DELETE request -->
-    <button @click="$delete('/api/remove')">Delete</button>
+<div x-data="{ count: 0 }">
+    <button @click="$get('/api/data')">GET</button>
+    <button @click="$post('/api/save')">POST</button>
+    <button @click="$patch('/api/update')">PATCH</button>
+    <button @click="$put('/api/replace')">PUT</button>
+    <button @click="$delete('/api/remove')">DELETE</button>
 </div>
+```
+
+#### CSRF-Protected Variants
+
+For Laravel's CSRF protection, use the `x` suffix:
+
+```html
+<button @click="$postx('/save')">POST with CSRF</button>
+<button @click="$patchx('/update')">PATCH with CSRF</button>
+<button @click="$putx('/replace')">PUT with CSRF</button>
+<button @click="$deletex('/remove')">DELETE with CSRF</button>
 ```
 
 #### Request Options
 
 ```html
 <button
-    @click="$post('/save', {
-    include: ['user', 'settings'],      // Only send these keys
-    exclude: ['tempData', 'cache'],     // Don't send these keys
-    headers: { 'X-Custom': 'value' },   // Additional headers
-    retryInterval: 1000,                // Initial retry (ms)
-    retryScaler: 2,                     // Exponential backoff
-    retryMaxWaitMs: 30000,              // Max wait between retries
-    retryMaxCount: 10,                  // Max retry attempts
+    @click="$postx('/save', {
+    include: ['user', 'settings'],
+    exclude: ['tempData'],
+    headers: { 'X-Custom': 'value' },
+    retryInterval: 1000,
+    retryScaler: 2,
+    retryMaxWaitMs: 30000,
+    retryMaxCount: 10,
+    requestCancellation: true,
+    onProgress: (percent) => console.log(percent)
 })"
 >
-    Save with Options
+    Save
 </button>
 ```
 
+| Option                | Type     | Default | Description                    |
+| --------------------- | -------- | ------- | ------------------------------ |
+| `include`             | array    | `null`  | Only send these state keys     |
+| `exclude`             | array    | `null`  | Don't send these state keys    |
+| `headers`             | object   | `{}`    | Additional request headers     |
+| `retryInterval`       | number   | `1000`  | Initial retry delay (ms)       |
+| `retryScaler`         | number   | `2`     | Exponential backoff multiplier |
+| `retryMaxWaitMs`      | number   | `30000` | Maximum retry delay (ms)       |
+| `retryMaxCount`       | number   | `10`    | Maximum retry attempts         |
+| `requestCancellation` | bool     | `false` | Cancel previous request        |
+| `onProgress`          | function | `null`  | Upload progress callback       |
+
 ### CSRF Protection
 
-Use the `x` suffix for CSRF-protected requests (recommended for Laravel):
+The `@gale` directive adds `<meta name="csrf-token">`. The `x` variants (`$postx`, etc.) read this token automatically.
 
-```html
-<div x-data="{ form: { name: '', email: '' } }">
-    <!-- CSRF-protected requests -->
-    <button @click="$postx('/save')">Save (CSRF)</button>
-    <button @click="$patchx('/update')">Update (CSRF)</button>
-    <button @click="$putx('/replace')">Replace (CSRF)</button>
-    <button @click="$deletex('/remove')">Delete (CSRF)</button>
-</div>
-```
-
-**How CSRF works:**
-
-1. The `@gale` directive adds `<meta name="csrf-token">` to your page
-2. `$postx` (and other `x` variants) automatically read this token
-3. The token is sent in the `X-CSRF-TOKEN` header
-4. Laravel's middleware validates the token
-
-**Configure CSRF:**
+#### Configuration
 
 ```javascript
-// Access via Alpine.gale namespace
 Alpine.gale.configureCsrf({
     headerName: "X-CSRF-TOKEN",
     metaName: "csrf-token",
-    cookieName: "XSRF-TOKEN", // Alternative source
+    cookieName: "XSRF-TOKEN",
 });
+
+// Get current config
+const config = Alpine.gale.getCsrfConfig();
 ```
 
-### Loading States
+| Option       | Default          | Description             |
+| ------------ | ---------------- | ----------------------- |
+| `headerName` | `'X-CSRF-TOKEN'` | Header name for token   |
+| `metaName`   | `'csrf-token'`   | Meta tag name to read   |
+| `cookieName` | `'XSRF-TOKEN'`   | Cookie name as fallback |
 
-#### `x-indicator` Directive
+### Global State ($gale)
 
-Creates a state variable that tracks request activity:
+The `$gale` magic provides global connection state:
+
+```html
+<div x-data>
+    <div x-show="$gale.loading">Loading...</div>
+    <div x-show="$gale.retrying">Reconnecting...</div>
+    <div x-show="$gale.retriesFailed">Connection failed</div>
+
+    <div x-show="$gale.error">
+        Error: <span x-text="$gale.lastError"></span>
+    </div>
+
+    <span x-text="$gale.activeCount + ' requests active'"></span>
+
+    <ul>
+        <template x-for="err in $gale.errors">
+            <li x-text="err"></li>
+        </template>
+    </ul>
+
+    <button @click="$gale.clearErrors()">Clear Errors</button>
+</div>
+```
+
+| Property        | Type     | Description                  |
+| --------------- | -------- | ---------------------------- |
+| `loading`       | bool     | Any request in progress      |
+| `activeCount`   | number   | Number of active requests    |
+| `retrying`      | bool     | Currently retrying a request |
+| `retriesFailed` | bool     | All retries exhausted        |
+| `error`         | bool     | Has any error                |
+| `lastError`     | string   | Most recent error message    |
+| `errors`        | array    | All error messages           |
+| `clearErrors()` | function | Clear all errors             |
+
+### Element State ($fetching)
+
+The `$fetching()` magic function tracks per-element loading state:
+
+```html
+<button @click="$postx('/save')" :disabled="$fetching()">
+    <span x-show="!$fetching()">Save</span>
+    <span x-show="$fetching()">Saving...</span>
+</button>
+```
+
+Note: `$fetching` is a function—always use `$fetching()` with parentheses. Set automatically when the element initiates a request.
+
+### Loading Directives
+
+#### x-indicator
+
+Creates a boolean state variable tracking requests within the element tree:
 
 ```html
 <div x-data="{ saving: false }" x-indicator="saving">
@@ -823,164 +1068,337 @@ Creates a state variable that tracks request activity:
         <span x-show="!saving">Save</span>
         <span x-show="saving">Saving...</span>
     </button>
-
-    <!-- Loading overlay -->
-    <div x-show="saving" class="loading-overlay">Processing...</div>
 </div>
 ```
 
-The indicator tracks all requests originating from within its element tree.
+#### x-loading
 
-#### `$gale` Magic
-
-Global connection state accessible anywhere:
+Show/hide elements or apply classes during loading:
 
 ```html
-<div x-data>
-    <!-- Global loading indicator -->
-    <div x-show="$gale.loading" class="global-spinner">Loading...</div>
+<!-- Show during loading -->
+<div x-loading>Loading...</div>
 
-    <!-- Error display -->
-    <div x-show="$gale.error" class="error-message">
-        <p x-text="$gale.error"></p>
-        <button @click="$gale.retry()">Retry</button>
-    </div>
+<!-- Hide during loading -->
+<div x-loading.remove>Content</div>
 
-    <!-- Connection state -->
-    <span x-show="$gale.retrying">Reconnecting...</span>
-</div>
+<!-- Add class during loading -->
+<button x-loading.class="opacity-50">Submit</button>
+
+<!-- Add attribute during loading -->
+<button x-loading.attr="disabled">Submit</button>
+
+<!-- Delay showing (prevents flicker for fast requests) -->
+<div x-loading.delay.200ms>Loading...</div>
 ```
 
-#### `$fetching` Magic
+| Modifier      | Description                  |
+| ------------- | ---------------------------- |
+| `.class`      | Add class(es) during loading |
+| `.attr`       | Add attribute during loading |
+| `.remove`     | Hide element during loading  |
+| `.delay.{ms}` | Delay before showing         |
 
-Per-element loading state (set by the element making the request):
+### Navigation
 
-```html
-<button @click="$postx('/save')" :disabled="$fetching">
-    <span x-show="!$fetching">Save</span>
-    <span x-show="$fetching">Processing...</span>
-</button>
-```
+#### x-navigate Directive
 
-### SPA Navigation Directive
-
-The `x-navigate` directive enables client-side navigation without full page reloads:
-
-#### Basic Navigation
+Enable SPA navigation on links and forms:
 
 ```html
-<!-- On links -->
+<!-- Links -->
 <a href="/users" x-navigate>Users</a>
 
-<!-- On forms -->
-<form action="/search" x-navigate>
+<!-- Forms -->
+<form action="/search" method="GET" x-navigate>
     <input name="q" type="text" />
     <button type="submit">Search</button>
 </form>
 
-<!-- On any element with expression -->
-<button x-navigate="'/users/' + userId">View User</button>
+<!-- Dynamic URL -->
+<button x-navigate="'/users/' + userId">View</button>
 ```
 
 #### Navigation Modifiers
 
 ```html
 <!-- Merge with current query params -->
-<a href="/users?sort=name" x-navigate.merge>Sort by Name</a>
+<a href="/users?sort=name" x-navigate.merge>Sort</a>
 
 <!-- Replace history instead of push -->
 <a href="/users" x-navigate.replace>Users</a>
 
-<!-- Navigation key for targeted updates -->
-<a href="/users" x-navigate.key.sidebar>Update Sidebar Only</a>
+<!-- Navigation key for partial updates -->
+<a href="/users" x-navigate.key.sidebar>Users</a>
 
 <!-- Keep only specific params -->
 <a href="/search?q=test" x-navigate.only.q.category>Search</a>
 
 <!-- Keep all except specific params -->
-<a href="/search" x-navigate.except.page>Reset Pagination</a>
+<a href="/search" x-navigate.except.page>Reset Page</a>
 
-<!-- Debounce navigation (useful for search inputs) -->
-<input @input="$navigate('/search?q=' + $el.value)" x-navigate.debounce.300ms />
+<!-- Debounce (for inputs) -->
+<input x-navigate.debounce.300ms="'/search?q=' + $el.value" />
 
-<!-- Throttle navigation -->
+<!-- Throttle -->
 <button x-navigate.throttle.500ms="'/next'">Next</button>
 
-<!-- Combined modifiers -->
+<!-- Combined -->
 <a href="/users?page=2" x-navigate.merge.key.pagination.replace>Page 2</a>
 ```
 
-#### Programmatic Navigation
+| Modifier           | Description                     |
+| ------------------ | ------------------------------- |
+| `.merge`           | Merge query params with current |
+| `.replace`         | Replace history entry           |
+| `.key.{name}`      | Navigation key for targeting    |
+| `.only.{params}`   | Keep only these params          |
+| `.except.{params}` | Remove these params             |
+| `.debounce.{ms}`   | Debounce navigation             |
+| `.throttle.{ms}`   | Throttle navigation             |
+
+#### $navigate Magic
 
 ```html
-<div x-data="{ userId: 1 }">
-    <button @click="$navigate('/users/' + userId)">View User</button>
+<button @click="$navigate('/users')">Users</button>
 
-    <button
-        @click="$navigate('/users', {
-        merge: true,
-        key: 'main-content',
-        replace: true
-    })"
-    >
-        Navigate with Options
-    </button>
-</div>
+<button
+    @click="$navigate('/users', {
+    merge: true,
+    replace: true,
+    key: 'main-content',
+    only: ['q'],
+    except: ['page']
+})"
+>
+    Navigate
+</button>
 ```
 
-#### Skip Navigation
+#### x-navigate-skip
 
-Prevent `x-navigate` from handling specific links:
+Exclude specific links from navigation handling:
 
 ```html
-<nav x-data x-navigate>
+<nav x-navigate>
     <a href="/dashboard">Dashboard</a>
-    <a href="/external" x-navigate-skip>External Link</a>
-    <a href="/download.pdf" x-navigate-skip>Download PDF</a>
+    <a href="/external" x-navigate-skip>External</a>
+    <a href="/file.pdf" x-navigate-skip>Download</a>
 </nav>
 ```
 
+### Component Registry
+
+Named components that can be targeted from the backend or other components.
+
+#### x-component Directive
+
+```html
+<div x-data="{ items: [], total: 0 }" x-component="cart">
+    <span x-text="total"></span>
+</div>
+
+<!-- With tags -->
+<div x-data="{ count: 0 }" x-component="counter" data-tags="widgets,dashboard">
+    <span x-text="count"></span>
+</div>
+```
+
+#### $components Magic
+
+```html
+<div x-data>
+    <!-- Check existence -->
+    <span x-show="$components.has('cart')">Cart loaded</span>
+
+    <!-- Get component data -->
+    <button @click="console.log($components.get('cart'))">Log Cart</button>
+
+    <!-- Get all components -->
+    <button @click="console.log($components.all())">Log All</button>
+
+    <!-- Get by tag -->
+    <button @click="$components.getByTag('widgets').forEach(c => c.refresh())">
+        Refresh Widgets
+    </button>
+
+    <!-- Update state -->
+    <button @click="$components.update('cart', { total: 0 })">
+        Clear Cart
+    </button>
+
+    <!-- Create state (like state() but creates new) -->
+    <button @click="$components.create('cart', { currency: 'EUR' })">
+        Set Currency
+    </button>
+
+    <!-- Delete state keys -->
+    <button @click="$components.delete('cart', ['tempItems'])">Clean Up</button>
+
+    <!-- Invoke method -->
+    <button @click="$components.invoke('cart', 'recalculate')">
+        Recalculate
+    </button>
+
+    <!-- Reactive state access -->
+    <span x-text="$components.state('cart', 'total')"></span>
+
+    <!-- Watch for changes -->
+    <div
+        x-init="$components.watch('cart', 'total', (val) => console.log(val))"
+    ></div>
+
+    <!-- Wait for component -->
+    <div x-init="$components.when('cart').then(c => console.log(c))"></div>
+
+    <!-- Callback when ready -->
+    <div x-init="$components.onReady('cart', (c) => console.log(c))"></div>
+</div>
+```
+
+| Method                            | Description                             |
+| --------------------------------- | --------------------------------------- |
+| `get(name)`                       | Get component Alpine data object        |
+| `getByTag(tag)`                   | Get all components with tag             |
+| `all()`                           | Get all registered components           |
+| `has(name)`                       | Check if component exists               |
+| `invoke(name, method, ...args)`   | Call method on component                |
+| `when(name, timeout?)`            | Promise resolving when component exists |
+| `onReady(name, callback)`         | Callback when component ready           |
+| `state(name, property)`           | Get reactive state value                |
+| `update(name, state)`             | Merge state into component              |
+| `create(name, state, options)`    | Set state (with onlyIfMissing option)   |
+| `delete(name, keys)`              | Remove state keys                       |
+| `watch(name, property, callback)` | Watch for changes                       |
+
+#### $invoke Shorthand
+
+```html
+<button @click="$invoke('cart', 'addItem', productId, qty)">Add</button>
+```
+
+#### Lifecycle Hooks
+
+```javascript
+// When component registers
+Alpine.gale.onComponentRegistered((name, component) => {
+    console.log(`${name} registered`);
+});
+
+// When component unregisters
+Alpine.gale.onComponentUnregistered((name) => {
+    console.log(`${name} unregistered`);
+});
+
+// When component state changes
+Alpine.gale.onComponentStateChanged((name, property, value) => {
+    console.log(`${name}.${property} = ${value}`);
+});
+```
+
+### File Uploads
+
+#### x-files Directive
+
+```html
+<div x-data>
+    <input type="file" name="avatar" x-files />
+
+    <div x-show="$file('avatar')">
+        <p>Name: <span x-text="$file('avatar')?.name"></span></p>
+        <p>Size: <span x-text="$formatBytes($file('avatar')?.size)"></span></p>
+        <img :src="$filePreview('avatar')" />
+    </div>
+
+    <button @click="$postx('/upload')">Upload</button>
+</div>
+```
+
+#### Multiple Files
+
+```html
+<input type="file" name="docs" x-files multiple />
+
+<template x-for="(file, i) in $files('docs')" :key="i">
+    <div>
+        <span x-text="file.name"></span>
+        <span x-text="$formatBytes(file.size)"></span>
+        <img :src="$filePreview('docs', i)" />
+    </div>
+</template>
+
+<button @click="$clearFiles('docs')">Clear</button>
+```
+
+#### Validation Modifiers
+
+```html
+<!-- Max size (5MB) -->
+<input type="file" x-files.max-size-5mb />
+
+<!-- Max files -->
+<input type="file" x-files.max-files-3 multiple />
+
+<!-- Combined -->
+<input type="file" x-files.max-size-10mb.max-files-5 multiple />
+```
+
+#### File Events
+
+```html
+<div x-data @gale:file-change="console.log($event.detail)">
+    <input type="file" x-files />
+</div>
+
+<div x-data @gale:file-error="alert($event.detail.message)">
+    <input type="file" x-files.max-size-1mb />
+</div>
+```
+
+| Event              | Detail                    |
+| ------------------ | ------------------------- |
+| `gale:file-change` | `{ name, files }`         |
+| `gale:file-error`  | `{ name, message, type }` |
+
+#### File Magics
+
+| Magic                           | Description                    |
+| ------------------------------- | ------------------------------ |
+| `$file(name)`                   | Get single file info           |
+| `$files(name)`                  | Get array of files             |
+| `$filePreview(name, index?)`    | Get preview URL                |
+| `$clearFiles(name?)`            | Clear file input(s)            |
+| `$formatBytes(size, decimals?)` | Format bytes to human-readable |
+| `$uploading`                    | Upload in progress             |
+| `$uploadProgress`               | Progress 0-100                 |
+| `$uploadError`                  | Error message                  |
+
 ### Message Display
 
-The `x-message` directive displays messages from server state:
+#### x-message Directive
 
-#### Basic Usage
+Display messages from state:
 
 ```html
 <div x-data="{ messages: {} }">
-    <div>
-        <label>Email</label>
-        <input name="email" type="email" />
-        <span x-message="email" class="text-red-500"></span>
-    </div>
+    <input name="email" type="email" />
+    <span x-message="email" class="text-red-500"></span>
 
-    <div>
-        <label>Password</label>
-        <input name="password" type="password" />
-        <span x-message="password" class="text-red-500"></span>
-    </div>
+    <input name="password" type="password" />
+    <span x-message="password" class="text-red-500"></span>
 
-    <!-- Success message -->
     <div x-message="_success" class="text-green-500"></div>
 
     <button @click="$postx('/login')">Login</button>
 </div>
 ```
 
-**Server-side:**
+#### Message Path
 
-```php
-// Send validation errors
-gale()->messages([
-    'email' => 'Invalid email address',
-    'password' => 'Password must be at least 8 characters',
-]);
+Access nested message paths:
 
-// Send success message
-gale()->messages(['_success' => 'Login successful!']);
-
-// Clear all messages
-gale()->clearMessages();
+```html
+<span x-message="user.email"></span>
 ```
 
 #### Message Types
@@ -991,23 +1409,20 @@ Messages can include type prefixes for styling:
 gale()->messages([
     'email' => '[ERROR] Invalid email',
     'saved' => '[SUCCESS] Changes saved',
-    'warning' => '[WARNING] Session expiring soon',
+    'note' => '[WARNING] Session expiring',
     'info' => '[INFO] New features available',
 ]);
 ```
 
-```html
-<span x-message="email"></span>
-<!-- Automatically adds class: message-error -->
-```
+Auto-applied classes: `message-error`, `message-success`, `message-warning`, `message-info`.
 
-#### Configure Messages
+#### Configuration
 
 ```javascript
 Alpine.gale.configureMessage({
-    defaultStateKey: "messages", // State property to read from
-    autoHide: true, // Hide when no message
-    autoShow: true, // Show when message present
+    defaultStateKey: "messages",
+    autoHide: true,
+    autoShow: true,
     typeClasses: {
         success: "message-success",
         error: "message-error",
@@ -1017,234 +1432,60 @@ Alpine.gale.configureMessage({
 });
 ```
 
-### Component Registry
-
-The component registry enables backend targeting of specific Alpine components by name:
-
-#### Registering Components
-
-```html
-<!-- Register with x-component directive -->
-<div x-data="{ items: [], total: 0 }" x-component="cart">
-    <span x-text="total"></span>
-</div>
-
-<!-- With tags for grouping -->
-<div x-data="{ count: 0 }" x-component="counter" data-tags="dashboard,widgets">
-    <span x-text="count"></span>
-</div>
-```
-
-#### Backend Component Updates
-
-```php
-// Update specific component state
-gale()->componentState('cart', [
-    'items' => $cartItems,
-    'total' => $cartTotal,
-]);
-
-// Invoke a method on a component
-gale()->componentMethod('cart', 'recalculate');
-
-// With arguments
-gale()->componentMethod('calculator', 'setValues', [10, 20, 30]);
-```
-
-#### Frontend Component Access
-
-```html
-<div x-data>
-    <!-- Check if component exists -->
-    <span x-show="$components.has('cart')">Cart loaded</span>
-
-    <!-- Get component data -->
-    <button @click="console.log($components.get('cart'))">Log Cart</button>
-
-    <!-- Update component state -->
-    <button @click="$components.update('cart', { total: 0 })">
-        Clear Cart
-    </button>
-
-    <!-- Invoke component method -->
-    <button @click="$components.invoke('cart', 'recalculate')">
-        Recalculate
-    </button>
-
-    <!-- Get components by tag -->
-    <button
-        @click="$components.getByTag('dashboard').forEach(c => c.refresh())"
-    >
-        Refresh Dashboard Widgets
-    </button>
-
-    <!-- Get all components -->
-    <button @click="console.log($components.all())">Log All Components</button>
-</div>
-```
-
-#### Shorthand Invoke Magic
-
-```html
-<!-- $invoke is a shorthand for $components.invoke -->
-<button @click="$invoke('cart', 'addItem', productId, quantity)">
-    Add to Cart
-</button>
-```
-
-### File Uploads
-
-Alpine Gale provides native file upload support that integrates with Laravel's standard file handling:
-
-#### Basic File Upload
-
-```html
-<div x-data="{ uploading: false, progress: 0 }">
-    <!-- Mark file input with x-files -->
-    <input type="file" name="avatar" x-files />
-
-    <!-- Show selected file info -->
-    <div x-show="$file('avatar')">
-        <p>Selected: <span x-text="$file('avatar')?.name"></span></p>
-        <p>Size: <span x-text="$formatBytes($file('avatar')?.size)"></span></p>
-        <img :src="$filePreview('avatar')" class="preview" />
-    </div>
-
-    <!-- Upload button -->
-    <button @click="$postx('/upload')" :disabled="uploading">
-        <span x-show="!uploading">Upload</span>
-        <span x-show="uploading"
-            >Uploading... <span x-text="progress"></span>%</span
-        >
-    </button>
-</div>
-```
-
-**Server-side:**
-
-```php
-public function upload(Request $request)
-{
-    $request->validate([
-        'avatar' => 'required|image|max:2048',
-    ]);
-
-    $path = $request->file('avatar')->store('avatars');
-
-    return gale()
-        ->state('avatarUrl', Storage::url($path))
-        ->messages(['_success' => 'Avatar uploaded!']);
-}
-```
-
-#### Multiple Files
-
-```html
-<div x-data="{ files: [] }">
-    <input type="file" name="documents" x-files multiple />
-
-    <!-- List selected files -->
-    <template x-for="(file, index) in $files('documents')" :key="index">
-        <div>
-            <span x-text="file.name"></span>
-            <span x-text="$formatBytes(file.size)"></span>
-            <button @click="$clearFiles('documents')">Clear</button>
-        </div>
-    </template>
-
-    <button @click="$postx('/upload-multiple')">Upload All</button>
-</div>
-```
-
-#### Client-Side Validation
-
-```html
-<!-- Max file size (5MB) -->
-<input type="file" x-files.max-size-5mb />
-
-<!-- Max number of files -->
-<input type="file" x-files.max-files-3 multiple />
-
-<!-- Combined -->
-<input type="file" x-files.max-size-10mb.max-files-5 multiple />
-
-<!-- Handle validation errors -->
-<div x-data @gale:file-error="alert($event.detail.message)">
-    <input type="file" x-files.max-size-1mb />
-</div>
-```
-
-#### File Magics Reference
-
-| Magic                        | Description                                 |
-| ---------------------------- | ------------------------------------------- |
-| `$file(name)`                | Get single file info (name, size, type)     |
-| `$files(name)`               | Get array of file info for multiple uploads |
-| `$filePreview(name, index?)` | Get preview URL for images                  |
-| `$clearFiles(name?)`         | Clear file input(s)                         |
-| `$formatBytes(size)`         | Format bytes to human-readable              |
-| `$uploading`                 | Boolean - upload in progress                |
-| `$uploadProgress`            | Number - upload progress (0-100)            |
-| `$uploadError`               | String - upload error message               |
-
 ### Polling
 
-The `x-poll` directive automatically fetches data at intervals:
-
-#### Basic Polling
+#### x-poll Directive
 
 ```html
-<!-- Poll every 5 seconds (default) -->
-<div x-data="{ status: 'pending' }" x-poll="/api/job-status">
-    Status: <span x-text="status"></span>
+<!-- Default 5 second interval -->
+<div x-data="{ status: '' }" x-poll="/api/status">
+    <span x-text="status"></span>
 </div>
 
 <!-- Custom interval -->
-<div x-poll.2s="/api/notifications">...</div>
-<div x-poll.500ms="/api/live-data">...</div>
+<div x-poll.2s="/api/data">...</div>
+<div x-poll.500ms="/api/live">...</div>
 <div x-poll.30s="/api/stats">...</div>
 ```
 
-#### Conditional Polling
+#### Modifiers
 
 ```html
-<!-- Only poll when tab is visible -->
-<div x-data x-poll.visible.5s="/api/status">...</div>
+<!-- Only poll when visible -->
+<div x-poll.visible.5s="/api/status">...</div>
 
-<!-- Stop polling when condition is met -->
-<div
-    x-data="{ jobComplete: false }"
-    x-poll.2s="/api/job"
-    x-poll-stop="jobComplete"
->
-    <span x-show="!jobComplete">Processing...</span>
-    <span x-show="jobComplete">Complete!</span>
+<!-- With CSRF -->
+<div x-poll.csrf.5s="/api/protected">...</div>
+
+<!-- Stop on condition -->
+<div x-data="{ done: false }" x-poll.2s="/api/job" x-poll-stop="done">
+    Processing...
 </div>
 ```
 
-#### With CSRF Protection
-
-```html
-<div x-poll.csrf.5s="/api/protected-endpoint">...</div>
-```
+| Modifier   | Description                           |
+| ---------- | ------------------------------------- |
+| `.{time}`  | Poll interval (e.g., `.5s`, `.500ms`) |
+| `.visible` | Only poll when tab visible            |
+| `.csrf`    | Include CSRF token                    |
 
 ### Confirmation Dialogs
 
-The `x-confirm` directive shows confirmation before executing actions:
+#### x-confirm Directive
 
 ```html
-<!-- Basic confirmation -->
-<button @click="$deletex('/user/123')" x-confirm>Delete User</button>
+<!-- Default message -->
+<button @click="$deletex('/item/1')" x-confirm>Delete</button>
 
 <!-- Custom message -->
 <button
-    @click="$deletex('/user/123')"
-    x-confirm="Are you sure you want to delete this user?"
+    @click="$deletex('/item/1')"
+    x-confirm="Are you sure you want to delete this item?"
 >
-    Delete User
+    Delete
 </button>
 
-<!-- With expression -->
+<!-- Dynamic message -->
 <button
     @click="$deletex('/user/' + userId)"
     x-confirm="'Delete ' + userName + '?'"
@@ -1253,129 +1494,167 @@ The `x-confirm` directive shows confirmation before executing actions:
 </button>
 ```
 
-**Configure confirmation dialog:**
+#### Configuration
 
 ```javascript
 Alpine.gale.configureConfirm({
     defaultMessage: "Are you sure?",
-    // Custom handler for styled modals
     handler: async (message) => {
-        return await myCustomModal.confirm(message);
+        // Custom modal
+        return await myModal.confirm(message);
     },
 });
 ```
 
 ---
 
-## Advanced Usage
+## Advanced Topics
 
-### Conditional Execution
+### SSE Protocol Specification
 
-Execute callbacks based on conditions:
+Gale uses Server-Sent Events with specific event types and data formats.
 
-```php
-// When condition is true
-gale()->when($user->isAdmin(), function ($gale) {
-    $gale->state('adminTools', true);
-});
+#### Event Types
 
-// With fallback
-gale()->when(
-    $user->isAdmin(),
-    fn($gale) => $gale->state('role', 'admin'),
-    fn($gale) => $gale->state('role', 'user')
-);
+| Event                  | Purpose                           |
+| ---------------------- | --------------------------------- |
+| `gale-patch-state`     | Merge state into Alpine component |
+| `gale-patch-elements`  | DOM manipulation                  |
+| `gale-patch-component` | Update named component            |
+| `gale-invoke-method`   | Call method on component          |
 
-// Unless (inverted when)
-gale()->unless($user->isGuest(), function ($gale) use ($user) {
-    $gale->state('user', $user->toArray());
-});
+#### gale-patch-state Format
 
-// Based on request type
-gale()->whenGale(
-    fn($gale) => $gale->state('partial', true),
-    fn($gale) => $gale->web(view('full-page'))
-);
-
-// For navigate requests
-gale()->whenGaleNavigate('sidebar', function ($gale) {
-    $gale->fragment('layout', 'sidebar', $data);
-});
+```
+event: gale-patch-state
+data: state {"count":1,"user":{"name":"John"}}
+data: onlyIfMissing false
 ```
 
-### Component State from Backend
+| Data Line              | Description         |
+| ---------------------- | ------------------- |
+| `state {json}`         | State to merge      |
+| `onlyIfMissing {bool}` | Only set if missing |
 
-Target specific components by name for precise updates:
+#### gale-patch-elements Format
 
-```php
-// Update cart component
-gale()->componentState('cart', [
-    'items' => $cartItems,
-    'total' => number_format($total, 2),
-    'count' => count($cartItems),
-]);
+```
+event: gale-patch-elements
+data: selector #content
+data: mode morph
+data: elements <div id="content">...</div>
+data: useViewTransition true
+data: settle 100
+data: limit 10
+```
 
-// Only set if property doesn't exist
-gale()->componentState('cart', ['currency' => 'USD'], [
-    'onlyIfMissing' => true,
-]);
+| Data Line                  | Description                            |
+| -------------------------- | -------------------------------------- |
+| `selector {css}`           | Target element(s)                      |
+| `mode {mode}`              | Patch mode                             |
+| `elements {html}`          | HTML content (can span multiple lines) |
+| `useViewTransition {bool}` | Use View Transitions                   |
+| `settle {ms}`              | Delay before patch                     |
+| `limit {n}`                | Max elements                           |
 
-// Invoke component methods
-gale()->componentMethod('cart', 'recalculate');
-gale()->componentMethod('notifications', 'markAllRead');
-gale()->componentMethod('form', 'reset', ['keepValues' => true]);
+#### gale-patch-component Format
+
+```
+event: gale-patch-component
+data: component cart
+data: state {"total":42}
+data: onlyIfMissing false
+```
+
+#### gale-invoke-method Format
+
+```
+event: gale-invoke-method
+data: component cart
+data: method recalculate
+data: args [10,20]
+```
+
+### State Serialization
+
+When making requests, Alpine Gale serializes the component's `x-data`:
+
+#### What Gets Serialized
+
+-   All enumerable properties on the Alpine data object
+-   Nested objects (recursively)
+-   Arrays
+
+#### What Doesn't Get Serialized
+
+-   Functions
+-   DOM elements
+-   Circular references (skipped)
+-   Properties starting with `_` or `$`
+
+#### Controlling Serialization
+
+```html
+<button
+    @click="$postx('/save', {
+    include: ['user', 'settings'],
+    exclude: ['cache', 'temp']
+})"
+>
+    Save
+</button>
+```
+
+#### Component Inclusion
+
+```html
+<button
+    @click="$postx('/save', {
+    includeComponents: ['cart', 'wishlist'],
+    includeComponentsByTag: ['forms']
+})"
+>
+    Save All
+</button>
 ```
 
 ### DOM Morphing Modes
 
-Gale supports 8 different DOM patching modes:
+| Mode      | Alias         | Description                              |
+| --------- | ------------- | ---------------------------------------- |
+| `morph`   | —             | Intelligent diff, preserves Alpine state |
+| `inner`   | `innerHTML`   | Replace inner content                    |
+| `outer`   | `outerHTML`   | Replace entire element                   |
+| `replace` | —             | Same as outer                            |
+| `prepend` | `beforebegin` | Insert as first child                    |
+| `append`  | `beforeend`   | Insert as last child                     |
+| `before`  | `afterbegin`  | Insert before element                    |
+| `after`   | `afterend`    | Insert after element                     |
+| `remove`  | `delete`      | Remove element(s)                        |
 
-| Mode      | Description                                               |
-| --------- | --------------------------------------------------------- |
-| `morph`   | Intelligent DOM diffing (default, preserves Alpine state) |
-| `inner`   | Replace inner HTML only                                   |
-| `outer`   | Replace entire element including itself                   |
-| `replace` | Same as outer                                             |
-| `prepend` | Insert as first child                                     |
-| `append`  | Insert as last child                                      |
-| `before`  | Insert as previous sibling                                |
-| `after`   | Insert as next sibling                                    |
-| `remove`  | Remove matched elements                                   |
+#### Morph Behavior
 
-```php
-// Using mode option
-gale()->html($html, [
-    'selector' => '#list',
-    'mode' => 'append',
-]);
+The `morph` mode uses Alpine Morph to:
 
-// Convenience methods
-gale()->append('#list', '<li>New item</li>');
-gale()->prepend('#list', '<li>First item</li>');
-gale()->before('#target', '<div>Before</div>');
-gale()->after('#target', '<div>After</div>');
-gale()->inner('#container', '<p>New content</p>');
-gale()->outer('#element', '<div id="element">Replaced</div>');
-gale()->remove('.deprecated');
-```
+-   Preserve Alpine component state
+-   Minimize DOM changes
+-   Maintain focus and scroll position
+-   Handle script execution
 
 ### View Transitions API
 
-Enable smooth animations using the View Transitions API:
+Enable smooth page transitions:
 
 ```php
-gale()->view('partials.page', $data, [
-    'useViewTransition' => true,
-]);
+gale()->view('page', $data, ['useViewTransition' => true]);
 
 gale()->html($html, [
     'selector' => '#content',
-    'mode' => 'morph',
     'useViewTransition' => true,
 ]);
 ```
 
-**CSS for view transitions:**
+**CSS:**
 
 ```css
 ::view-transition-old(root) {
@@ -1387,58 +1666,296 @@ gale()->html($html, [
 }
 
 @keyframes fade-out {
-    from {
-        opacity: 1;
-    }
     to {
         opacity: 0;
     }
 }
-
 @keyframes fade-in {
     from {
         opacity: 0;
     }
-    to {
-        opacity: 1;
-    }
 }
+```
+
+Falls back gracefully in unsupported browsers.
+
+### Conditional Execution
+
+#### when() / unless()
+
+```php
+gale()->when($condition, function ($gale) {
+    $gale->state('visible', true);
+});
+
+gale()->when(
+    $user->isAdmin(),
+    fn($g) => $g->state('role', 'admin'),
+    fn($g) => $g->state('role', 'user')
+);
+
+gale()->unless($user->isGuest(), function ($gale) use ($user) {
+    $gale->state('user', $user->toArray());
+});
+```
+
+#### whenGale() / whenNotGale()
+
+```php
+gale()->whenGale(
+    fn($g) => $g->state('partial', true),
+    fn($g) => $g->web(view('full'))
+);
+
+gale()->whenNotGale(function ($gale) {
+    return view('full-page');
+});
+```
+
+#### whenGaleNavigate()
+
+```php
+gale()->whenGaleNavigate('sidebar', function ($gale) {
+    $gale->fragment('layout', 'sidebar', $data);
+});
+```
+
+#### web()
+
+Set response for non-Gale requests:
+
+```php
+return gale()
+    ->state('data', $data)
+    ->web(view('page', compact('data')));
 ```
 
 ---
 
-## Configuration
+## API Reference
 
-Publish the configuration file:
+### GaleResponse Methods
 
-```bash
-php artisan vendor:publish --tag=gale-config
-```
+| Method             | Signature                                                                                          | Description                 |
+| ------------------ | -------------------------------------------------------------------------------------------------- | --------------------------- |
+| `state`            | `state(string\|array $key, mixed $value = null, array $options = [])`                              | Set state                   |
+| `forget`           | `forget(string\|array $keys)`                                                                      | Remove state keys           |
+| `messages`         | `messages(array $messages)`                                                                        | Set messages state          |
+| `clearMessages`    | `clearMessages()`                                                                                  | Clear messages              |
+| `view`             | `view(string $view, array $data = [], array $options = [], bool $web = false)`                     | Render view                 |
+| `fragment`         | `fragment(string $view, string $fragment, array $data = [], array $options = [])`                  | Render fragment             |
+| `fragments`        | `fragments(array $fragments)`                                                                      | Render multiple fragments   |
+| `html`             | `html(string $html, array $options = [], bool $web = false)`                                       | Patch HTML                  |
+| `append`           | `append(string $selector, string $html)`                                                           | Append HTML                 |
+| `prepend`          | `prepend(string $selector, string $html)`                                                          | Prepend HTML                |
+| `before`           | `before(string $selector, string $html)`                                                           | Insert before               |
+| `after`            | `after(string $selector, string $html)`                                                            | Insert after                |
+| `inner`            | `inner(string $selector, string $html)`                                                            | Replace inner               |
+| `outer`            | `outer(string $selector, string $html)`                                                            | Replace outer               |
+| `replace`          | `replace(string $selector, string $html)`                                                          | Replace element             |
+| `remove`           | `remove(string $selector)`                                                                         | Remove element              |
+| `js`               | `js(string $script, array $options = [])`                                                          | Execute JavaScript          |
+| `dispatch`         | `dispatch(string $event, array $data = [], array $options = [])`                                   | Dispatch event              |
+| `navigate`         | `navigate(string\|array $url, string $key = 'true', array $options = [])`                          | Navigate                    |
+| `navigateWith`     | `navigateWith(string\|array $url, string $key = 'true', bool $merge = false, array $options = [])` | Navigate with merge control |
+| `navigateMerge`    | `navigateMerge(string\|array $url, string $key = 'true', array $options = [])`                     | Navigate with merge         |
+| `navigateClean`    | `navigateClean(string\|array $url, string $key = 'true', array $options = [])`                     | Navigate without merge      |
+| `navigateOnly`     | `navigateOnly(string\|array $url, array $only, string $key = 'true')`                              | Keep only params            |
+| `navigateExcept`   | `navigateExcept(string\|array $url, array $except, string $key = 'true')`                          | Remove params               |
+| `navigateReplace`  | `navigateReplace(string\|array $url, string $key = 'true', array $options = [])`                   | Replace history             |
+| `updateQueries`    | `updateQueries(array $queries, string $key = 'filters', bool $merge = true)`                       | Update query params         |
+| `clearQueries`     | `clearQueries(array $paramNames, string $key = 'clear')`                                           | Clear query params          |
+| `reload`           | `reload()`                                                                                         | Reload page                 |
+| `componentState`   | `componentState(string $name, array $state, array $options = [])`                                  | Update component            |
+| `componentMethod`  | `componentMethod(string $name, string $method, array $args = [])`                                  | Call component method       |
+| `redirect`         | `redirect(string $url)`                                                                            | Create redirect             |
+| `stream`           | `stream(callable $callback)`                                                                       | Stream mode                 |
+| `when`             | `when(mixed $condition, callable $true, ?callable $false = null)`                                  | Conditional                 |
+| `unless`           | `unless(mixed $condition, callable $callback)`                                                     | Inverse conditional         |
+| `whenGale`         | `whenGale(callable $gale, ?callable $web = null)`                                                  | Gale request check          |
+| `whenNotGale`      | `whenNotGale(callable $callback)`                                                                  | Non-Gale check              |
+| `whenGaleNavigate` | `whenGaleNavigate(?string $key, callable $callback)`                                               | Navigate check              |
+| `web`              | `web(mixed $response)`                                                                             | Set web fallback            |
+| `withEventId`      | `withEventId(string $id)`                                                                          | Set SSE event ID            |
+| `withRetry`        | `withRetry(int $ms)`                                                                               | Set SSE retry               |
+| `reset`            | `reset()`                                                                                          | Clear events                |
 
-**config/gale.php:**
+### GaleRedirect Methods
+
+| Method        | Signature                                                        | Description              |
+| ------------- | ---------------------------------------------------------------- | ------------------------ |
+| `with`        | `with(string\|array $key, mixed $value = null)`                  | Flash data               |
+| `withInput`   | `withInput(?array $input = null)`                                | Flash input              |
+| `withErrors`  | `withErrors(mixed $errors)`                                      | Flash errors             |
+| `back`        | `back(string $fallback = '/')`                                   | Go back                  |
+| `backOr`      | `backOr(string $route, array $params = [])`                      | Back with route fallback |
+| `refresh`     | `refresh(bool $query = true, bool $fragment = false)`            | Refresh page             |
+| `home`        | `home()`                                                         | Go to root               |
+| `route`       | `route(string $name, array $params = [], bool $absolute = true)` | Named route              |
+| `intended`    | `intended(string $default = '/')`                                | Auth intended            |
+| `forceReload` | `forceReload(bool $bypass = false)`                              | Hard reload              |
+
+### Request Macros Reference
+
+| Macro              | Signature                                                              | Description             |
+| ------------------ | ---------------------------------------------------------------------- | ----------------------- |
+| `isGale`           | `isGale()`                                                             | Check Gale request      |
+| `state`            | `state(?string $key = null, mixed $default = null)`                    | Get state               |
+| `isGaleNavigate`   | `isGaleNavigate(string\|array\|null $key = null)`                      | Check navigate          |
+| `galeNavigateKey`  | `galeNavigateKey()`                                                    | Get navigate key        |
+| `galeNavigateKeys` | `galeNavigateKeys()`                                                   | Get navigate keys array |
+| `validateState`    | `validateState(array $rules, array $messages = [], array $attrs = [])` | Validate state          |
+
+### Frontend Magics Reference
+
+| Magic                            | Description                        |
+| -------------------------------- | ---------------------------------- |
+| `$get(url, options?)`            | GET request                        |
+| `$post(url, options?)`           | POST request                       |
+| `$postx(url, options?)`          | POST with CSRF                     |
+| `$patch(url, options?)`          | PATCH request                      |
+| `$patchx(url, options?)`         | PATCH with CSRF                    |
+| `$put(url, options?)`            | PUT request                        |
+| `$putx(url, options?)`           | PUT with CSRF                      |
+| `$delete(url, options?)`         | DELETE request                     |
+| `$deletex(url, options?)`        | DELETE with CSRF                   |
+| `$gale`                          | Global connection state            |
+| `$fetching()`                    | Element loading state (function)   |
+| `$navigate(url, options?)`       | Programmatic navigation            |
+| `$components`                    | Component registry API             |
+| `$invoke(name, method, ...args)` | Shorthand for `$components.invoke` |
+| `$file(name)`                    | Get file info                      |
+| `$files(name)`                   | Get files array                    |
+| `$filePreview(name, index?)`     | Get preview URL                    |
+| `$clearFiles(name?)`             | Clear files                        |
+| `$formatBytes(size, decimals?)`  | Format bytes                       |
+| `$uploading`                     | Upload in progress                 |
+| `$uploadProgress`                | Upload progress 0-100              |
+| `$uploadError`                   | Upload error message               |
+
+### Frontend Directives Reference
+
+| Directive            | Description              |
+| -------------------- | ------------------------ |
+| `x-navigate`         | Enable SPA navigation    |
+| `x-navigate-skip`    | Skip navigation handling |
+| `x-component="name"` | Register named component |
+| `x-files`            | File input binding       |
+| `x-message="key"`    | Display message          |
+| `x-loading`          | Loading state display    |
+| `x-indicator="var"`  | Create loading variable  |
+| `x-poll="url"`       | Auto-polling             |
+| `x-poll-stop="expr"` | Stop polling condition   |
+| `x-confirm`          | Confirmation dialog      |
+
+### Request Options Reference
+
+| Option                   | Type     | Default | Description              |
+| ------------------------ | -------- | ------- | ------------------------ |
+| `include`                | string[] | —       | Only send these keys     |
+| `exclude`                | string[] | —       | Don't send these keys    |
+| `headers`                | object   | `{}`    | Additional headers       |
+| `retryInterval`          | number   | `1000`  | Initial retry (ms)       |
+| `retryScaler`            | number   | `2`     | Backoff multiplier       |
+| `retryMaxWaitMs`         | number   | `30000` | Max retry wait (ms)      |
+| `retryMaxCount`          | number   | `10`    | Max retries              |
+| `requestCancellation`    | boolean  | `false` | Cancel previous          |
+| `onProgress`             | function | —       | Progress callback        |
+| `includeComponents`      | string[] | —       | Include component states |
+| `includeComponentsByTag` | string[] | —       | Include by tag           |
+
+### SSE Events Reference
+
+| Event                  | Data Lines                                                             |
+| ---------------------- | ---------------------------------------------------------------------- |
+| `gale-patch-state`     | `state`, `onlyIfMissing`                                               |
+| `gale-patch-elements`  | `selector`, `mode`, `elements`, `useViewTransition`, `settle`, `limit` |
+| `gale-patch-component` | `component`, `state`, `onlyIfMissing`                                  |
+| `gale-invoke-method`   | `component`, `method`, `args`                                          |
+
+### Configuration Reference
+
+#### Backend (config/gale.php)
 
 ```php
 return [
     'route_discovery' => [
-        // Enable automatic route discovery
         'enabled' => false,
-
-        // Directories to scan for controllers
-        'discover_controllers_in_directory' => [
-            // app_path('Http/Controllers'),
-        ],
-
-        // Directories to scan for views (key = URL prefix)
-        'discover_views_in_directory' => [
-            // 'docs' => resource_path('views/docs'),
-        ],
-
-        // Route transformers for customization
+        'discover_controllers_in_directory' => [],
+        'discover_views_in_directory' => [],
         'pending_route_transformers' => [
             ...Dancycodes\Gale\Routing\Config::defaultRouteTransformers(),
         ],
     ],
 ];
+```
+
+#### Frontend (JavaScript)
+
+```javascript
+// CSRF
+Alpine.gale.configureCsrf({
+    headerName: "X-CSRF-TOKEN",
+    metaName: "csrf-token",
+    cookieName: "XSRF-TOKEN",
+});
+
+// Messages
+Alpine.gale.configureMessage({
+    defaultStateKey: "messages",
+    autoHide: true,
+    autoShow: true,
+    typeClasses: {
+        /* ... */
+    },
+});
+
+// Confirmation
+Alpine.gale.configureConfirm({
+    defaultMessage: "Are you sure?",
+    handler: (message) => confirm(message),
+});
+
+// Navigation
+Alpine.gale.configureNavigation({
+    // Navigation options
+});
+
+// Get current configs
+Alpine.gale.getCsrfConfig();
+Alpine.gale.getMessageConfig();
+Alpine.gale.getConfirmConfig();
+Alpine.gale.getNavigationConfig();
+```
+
+---
+
+## Troubleshooting
+
+### Common Issues
+
+| Issue                  | Cause                     | Solution                           |
+| ---------------------- | ------------------------- | ---------------------------------- |
+| "No Alpine context"    | Magic used outside x-data | Wrap in x-data element             |
+| CSRF token mismatch    | Token not sent            | Use `$postx` instead of `$post`    |
+| State not updating     | Wrong key                 | Check Alpine x-data property names |
+| 419 error              | Session expired           | Refresh page or use meta token     |
+| Navigation not working | Missing x-navigate        | Add directive to link/form         |
+| File upload fails      | Missing x-files           | Add directive to file input        |
+| Messages not showing   | Wrong key                 | Check x-message matches server key |
+| Polling not stopping   | Condition never true      | Check x-poll-stop expression       |
+
+### Debugging
+
+```html
+<!-- Log all state changes -->
+<div x-data="{ count: 0 }" x-init="$watch('count', v => console.log(v))">
+    <!-- Check $gale state -->
+    <div x-data x-init="console.log($gale)">
+        <!-- View component registry -->
+        <button @click="console.log($components.all())">Debug</button>
+    </div>
+</div>
 ```
 
 ---
@@ -1449,76 +1966,23 @@ return [
 
 ```bash
 cd packages/dancycodes/gale
-
-# Run all tests
 vendor/bin/phpunit
-
-# Run with coverage
-vendor/bin/phpunit --coverage-html coverage
-
-# Run specific test suite
-vendor/bin/phpunit --testsuite Unit
-vendor/bin/phpunit --testsuite Feature
-
-# Static analysis
 vendor/bin/phpstan analyse
-
-# Code formatting
 vendor/bin/pint
-```
-
-### Application Tests
-
-```bash
-# Feature tests
-php artisan test tests/Feature/
-
-# Browser tests (requires Playwright)
-php artisan test tests/Browser/
-
-# Specific test
-php artisan test --filter="can increment counter"
-```
-
----
-
-## Contributing
-
-Contributions are welcome! Please submit issues and pull requests on GitHub.
-
-### Development Setup
-
-```bash
-# Clone the repository
-git clone https://github.com/dancycodes/gale.git
-
-# Install dependencies
-composer install
-
-# Run tests
-vendor/bin/phpunit
-
-# Check code style
-vendor/bin/pint --test
-
-# Run static analysis
-vendor/bin/phpstan analyse
 ```
 
 ---
 
 ## License
 
-Laravel Gale is open-sourced software licensed under the [MIT License](LICENSE).
+MIT License. See [LICENSE](LICENSE).
 
 ---
 
 ## Credits
 
-Created by **DancyCodes** - dancycodes@gmail.com
+Created by **DancyCodes** — dancycodes@gmail.com
 
-Special thanks to:
-
--   [Laravel](https://laravel.com) for the amazing framework
--   [Alpine.js](https://alpinejs.dev) for the lightweight reactivity
--   [Datastar](https://data-star.dev) for SSE protocol inspiration
+-   [Laravel](https://laravel.com)
+-   [Alpine.js](https://alpinejs.dev)
+-   [Datastar](https://data-star.dev) — SSE inspiration
