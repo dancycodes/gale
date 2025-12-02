@@ -1401,6 +1401,65 @@ Access nested message paths:
 <span x-message="user.email"></span>
 ```
 
+#### Array Validation with x-for
+
+Use template literals to display validation errors for array items in loops:
+
+```html
+<div x-data="{
+    items: [
+        { name: '', quantity: 1 },
+        { name: '', quantity: 1 }
+    ],
+    messages: {}
+}">
+    <template x-for="(item, index) in items" :key="index">
+        <div>
+            <input x-model="items[index].name">
+            <span x-message="`items.${index}.name`" class="text-red-500"></span>
+
+            <input x-model="items[index].quantity" type="number">
+            <span x-message="`items.${index}.quantity`" class="text-red-500"></span>
+        </div>
+    </template>
+
+    <button @click="$postx('/validate-items')">Validate</button>
+</div>
+```
+
+Backend validation with `validateState`:
+
+```php
+Route::post('/validate-items', function (Request $request) {
+    $validated = $request->validateState([
+        'items' => 'required|array|min:1',
+        'items.*.name' => 'required|string|min:2',
+        'items.*.quantity' => 'required|integer|min:1',
+    ], [
+        'items.*.name.required' => 'Item name is required',
+        'items.*.name.min' => 'Item name must be at least 2 characters',
+        'items.*.quantity.min' => 'Quantity must be at least 1',
+    ]);
+
+    return gale()->messages(['_success' => 'All items validated!']);
+});
+```
+
+**Supported expression syntaxes:**
+
+```html
+<!-- Template literals (recommended) -->
+<span x-message="`items.${index}.name`"></span>
+
+<!-- String concatenation -->
+<span x-message="'items.' + index + '.name'"></span>
+
+<!-- Nested arrays -->
+<span x-message="`items.${i}.details.${j}.value`"></span>
+```
+
+**Wildcard clearing:** When using `validateState` with wildcard rules like `items.*.name`, all matching message keys (e.g., `items.0.name`, `items.1.name`) are automatically cleared before validation, ensuring stale errors from removed items don't persist.
+
 #### Message Types
 
 Messages can include type prefixes for styling:

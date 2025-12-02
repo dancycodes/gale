@@ -309,11 +309,26 @@ class GaleServiceProvider extends ServiceProvider
                 $existingMessages = [];
             }
 
-            // Selectively clear only fields being validated (preserve other messages)
+            // Selectively clear fields being validated (handle wildcards for arrays)
             $clearedMessages = $existingMessages;
-            foreach (array_keys($rules) as $field) {
-                // Handle nested fields like 'user.email' -> clear 'user.email'
-                $clearedMessages[$field] = '';
+            foreach (array_keys($rules) as $ruleKey) {
+                if (str_contains($ruleKey, '*')) {
+                    // Wildcard rule (e.g., 'items.*.name'): build regex pattern
+                    // to match all existing message keys like 'items.0.name', 'items.1.name'
+                    $pattern = preg_quote($ruleKey, '/');
+                    $pattern = str_replace('\*', '\d+', $pattern); // Replace * with \d+ for numeric indices
+                    $pattern = '/^' . $pattern . '$/';
+
+                    // Clear ALL existing message keys matching the pattern
+                    foreach (array_keys($clearedMessages) as $msgKey) {
+                        if (preg_match($pattern, $msgKey)) {
+                            $clearedMessages[$msgKey] = '';
+                        }
+                    }
+                } else {
+                    // Simple field - clear directly
+                    $clearedMessages[$ruleKey] = '';
+                }
             }
 
             // Create validator
