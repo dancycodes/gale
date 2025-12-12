@@ -88,6 +88,12 @@ class GaleServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        if ($this->app->runningInConsole()) {
+            $this->commands([
+                \Dancycodes\Gale\Console\InstallCommand::class,
+            ]);
+        }
+
         $this->publishes([
             __DIR__ . '/../resources/js' => public_path('vendor/gale/js'),
         ], 'gale-assets');

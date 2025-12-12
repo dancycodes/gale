@@ -106,21 +106,10 @@ Click the button. The count updates via SSE. No page reload, no JavaScript writt
 
 ## Installation
 
-### Step 1: Install Package
-
 ```bash
 composer require dancycodes/gale
+php artisan gale:install
 ```
-
-### Step 2: Publish Assets
-
-```bash
-php artisan vendor:publish --tag=gale-assets
-```
-
-Publishes to `public/vendor/gale/js/gale.js`.
-
-### Step 3: Add Directive
 
 Add `@gale` to your layout's `<head>`:
 
@@ -130,11 +119,57 @@ Add `@gale` to your layout's `<head>`:
 </head>
 ```
 
-This outputs:
+**That's it!** You're ready to use Gale.
 
+The `@gale` directive outputs:
 -   CSRF meta tag
--   Alpine.js with Morph plugin
+-   Alpine.js (v3) with Morph plugin
 -   Alpine Gale plugin
+
+### Existing Alpine.js Projects
+
+Gale includes Alpine.js (v3) with the Morph plugin. If you already have Alpine.js in your project, **remove it** to prevent conflicts:
+
+**If using CDN:**
+```html
+<!-- Remove this -->
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
+```
+
+**If using npm/Vite:**
+```javascript
+// Remove these lines from resources/js/app.js:
+import Alpine from 'alpinejs';
+window.Alpine = Alpine;
+Alpine.start();
+```
+
+Then use `@gale` instead — it handles everything.
+
+### Using Additional Alpine Plugins
+
+Gale exposes `window.Alpine`, so you can still add other Alpine plugins:
+
+```html
+<head>
+    @gale
+    <script>
+        document.addEventListener('alpine:init', () => {
+            Alpine.plugin(yourPlugin);
+        });
+    </script>
+</head>
+```
+
+Or in your bundled JavaScript:
+
+```javascript
+// resources/js/app.js
+import persist from '@alpinejs/persist';
+
+// Alpine is available globally via @gale
+window.Alpine.plugin(persist);
+```
 
 ### Optional: Publish Configuration
 
@@ -1991,10 +2026,37 @@ Alpine.gale.getNavigationConfig();
 
 ## Troubleshooting
 
+### Multiple Alpine Instances
+
+If you see this error in the console:
+
+```
+Detected multiple instances of Alpine running
+```
+
+Or Alpine magics like `$wire` or `$postx` are undefined, you have two versions of Alpine running. **Gale bundles Alpine.js**, so you must remove any other Alpine installation:
+
+**Remove CDN script:**
+```html
+<!-- Remove this line -->
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
+```
+
+**Remove npm import (Laravel Breeze, etc.):**
+```javascript
+// Remove from resources/js/app.js:
+import Alpine from 'alpinejs';
+window.Alpine = Alpine;
+Alpine.start();
+```
+
+Then use `@gale` — it provides Alpine.js, Morph, and Gale together.
+
 ### Common Issues
 
 | Issue                  | Cause                     | Solution                           |
 | ---------------------- | ------------------------- | ---------------------------------- |
+| "Multiple instances"   | Duplicate Alpine.js       | Remove existing Alpine (see above) |
 | "No Alpine context"    | Magic used outside x-data | Wrap in x-data element             |
 | CSRF token mismatch    | Token not sent            | Use `$postx` instead of `$post`    |
 | State not updating     | Wrong key                 | Check Alpine x-data property names |
