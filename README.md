@@ -4,8 +4,11 @@
 [![Laravel Version](https://img.shields.io/badge/Laravel-11%2B%20%7C%2012%2B-FF2D20?style=flat-square&logo=laravel)](https://laravel.com)
 [![Alpine.js](https://img.shields.io/badge/Alpine.js-3.x-8BC0D0?style=flat-square&logo=alpine.js)](https://alpinejs.dev)
 [![License](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
+[![Documentation](https://img.shields.io/badge/Docs-dancycodes.com%2Fgale-blue?style=flat-square)](https://dancycodes.com/gale)
 
 **Laravel Gale** is a server-driven reactive framework for Laravel. It combines Server-Sent Events (SSE) with Alpine.js to enable real-time UI updates directly from your Blade templates—no JavaScript framework, no build complexity, no API layer.
+
+> 📚 **[View Full Documentation →](https://dancycodes.com/gale)**
 
 This README documents both:
 
@@ -66,6 +69,7 @@ This README documents both:
 -   [Troubleshooting](#troubleshooting)
 -   [Testing](#testing)
 -   [License](#license)
+-   [Resources](#resources)
 
 ---
 
@@ -101,6 +105,8 @@ Route::post('/increment', function () {
 ```
 
 Click the button. The count updates via SSE. No page reload, no JavaScript written.
+
+> 💡 See the [Quickstart Guide](https://dancycodes.com/gale/docs/quickstart) for a step-by-step tutorial.
 
 ---
 
@@ -176,6 +182,8 @@ window.Alpine.plugin(persist);
 ```bash
 php artisan vendor:publish --tag=gale-config
 ```
+
+> 📖 For detailed installation instructions, see the [Installation Guide](https://dancycodes.com/gale/docs/installation).
 
 ---
 
@@ -255,6 +263,8 @@ All Alpine Gale features require an Alpine.js context:
 <!-- Fails: No Alpine context -->
 <button @click="$postx('/increment')">Broken</button>
 ```
+
+> 📖 Learn more about the [Architecture & Concepts](https://dancycodes.com/gale/docs/concepts/how-it-works).
 
 ---
 
@@ -955,6 +965,8 @@ class UserController extends Controller
 | `Where::ALPHANUMERIC` | `[a-zA-Z0-9]+` |
 | `Where::UUID`         | UUID pattern   |
 
+> 📖 See the full [Backend Reference](https://dancycodes.com/gale/docs/reference/backend) for all available methods and options.
+
 ---
 
 ## Frontend: Alpine Gale
@@ -1600,6 +1612,8 @@ Alpine.gale.configureConfirm({
 });
 ```
 
+> 📖 See the full [Frontend Reference](https://dancycodes.com/gale/docs/reference/frontend) for all directives and magics.
+
 ---
 
 ## Advanced Topics
@@ -1823,6 +1837,8 @@ return gale()
     ->state('data', $data)
     ->web(view('page', compact('data')));
 ```
+
+> 📖 Explore [Advanced Topics](https://dancycodes.com/gale/docs/advanced/events) for SSE protocols, streaming, and more.
 
 ---
 
@@ -2107,3 +2123,12 @@ Created by **DancyCodes** — dancycodes@gmail.com
 -   [Laravel](https://laravel.com)
 -   [Alpine.js](https://alpinejs.dev)
 -   [Datastar](https://data-star.dev) — SSE inspiration
+
+---
+
+## Resources
+
+-   📚 [Full Documentation](https://dancycodes.com/gale)
+-   🚀 [Quickstart Guide](https://dancycodes.com/gale/docs/quickstart)
+-   📖 [API Reference](https://dancycodes.com/gale/docs/reference/backend)
+-   💡 [Examples & Tutorials](https://dancycodes.com/gale/docs/concepts/how-it-works)
