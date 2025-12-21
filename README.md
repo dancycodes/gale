@@ -47,6 +47,7 @@ This README documents both:
     -   [Loading Directives](#loading-directives)
     -   [Navigation](#navigation-1)
     -   [Component Registry](#component-registry)
+    -   [Form Binding (x-name)](#form-binding-x-name)
     -   [File Uploads](#file-uploads)
     -   [Message Display](#message-display)
     -   [Polling](#polling)
@@ -1343,6 +1344,236 @@ Alpine.gale.onComponentStateChanged((name, property, value) => {
 });
 ```
 
+### Form Binding (x-name)
+
+The `x-name` directive simplifies form element binding by combining `x-model` behavior with automatic state creation and Laravel-compatible `name` attributes.
+
+#### Basic Usage
+
+```html
+<!-- Before: Verbose, requires pre-declaring state -->
+<div x-data="{ email: '', password: '' }">
+    <input x-model="email" name="email" type="email">
+    <input x-model="password" name="password" type="password">
+</div>
+
+<!-- After: Clean and declarative -->
+<div x-data="{ email: '', password: '' }">
+    <input x-name="email" type="email">
+    <input x-name="password" type="password">
+</div>
+```
+
+The directive:
+- Creates two-way binding (like `x-model`)
+- Sets the `name` attribute automatically for FormData/Laravel compatibility
+- Auto-creates state if it doesn't exist in `x-data`
+- For file inputs, delegates to the `x-files` system
+
+#### Type-Aware Default Values
+
+When state is auto-created, appropriate defaults are used based on input type:
+
+| Input Type | Default Value | Notes |
+|------------|---------------|-------|
+| text, email, password, tel, url, search | `''` | Empty string |
+| number, range | `null` | Distinguishes "not entered" from 0 |
+| checkbox (single) | `false` | Boolean toggle |
+| checkbox (array mode) | `[]` | Multiple selections |
+| radio | `null` | No selection initially |
+| select | `''` | Empty selection |
+| select[multiple] | `[]` | Array of selections |
+| textarea | `''` | Text content |
+| file | — | Uses x-files WeakMap registry |
+
+If the element has a `value` attribute, that value is used as the initial state:
+
+```html
+<div x-data>
+    <input x-name="count" type="number" value="42">
+    <!-- State: { count: 42 } -->
+</div>
+```
+
+#### Nested Paths
+
+Use dot notation for nested state structures:
+
+```html
+<div x-data="{ user: { name: '', email: '', phone: '' } }">
+    <input x-name="user.name" type="text">
+    <input x-name="user.email" type="email">
+    <input x-name="user.phone" type="tel">
+</div>
+```
+
+Deep nesting works too:
+
+```html
+<div x-data="{ form: { contact: { address: { city: '' } } } }">
+    <input x-name="form.contact.address.city" type="text">
+</div>
+```
+
+#### Checkboxes
+
+**Single checkbox (boolean mode):**
+
+```html
+<div x-data="{ newsletter: false }">
+    <input x-name="newsletter" type="checkbox">
+    <!-- Toggles between true/false -->
+</div>
+```
+
+**Multiple checkboxes (array mode):**
+
+Use the `.array` modifier or let Gale auto-detect when multiple checkboxes share the same name:
+
+```html
+<div x-data="{ tags: [] }">
+    <!-- Explicit array mode with .array modifier -->
+    <input x-name.array="tags" type="checkbox" value="alpha">
+    <input x-name.array="tags" type="checkbox" value="beta">
+    <input x-name.array="tags" type="checkbox" value="gamma">
+    <!-- State: { tags: ['alpha', 'beta'] } when first two are checked -->
+</div>
+
+<div x-data="{ colors: [] }">
+    <!-- Auto-detected array mode (multiple checkboxes with same x-name) -->
+    <input x-name="colors" type="checkbox" value="red">
+    <input x-name="colors" type="checkbox" value="green">
+    <input x-name="colors" type="checkbox" value="blue">
+</div>
+```
+
+#### Radio Buttons
+
+```html
+<div x-data="{ gender: null }">
+    <input x-name="gender" type="radio" value="male"> Male
+    <input x-name="gender" type="radio" value="female"> Female
+    <input x-name="gender" type="radio" value="other"> Other
+    <!-- State: { gender: 'female' } when female selected -->
+</div>
+```
+
+#### Select Elements
+
+**Single select:**
+
+```html
+<div x-data="{ country: '' }">
+    <select x-name="country">
+        <option value="">Choose...</option>
+        <option value="us">United States</option>
+        <option value="uk">United Kingdom</option>
+    </select>
+</div>
+```
+
+**Multiple select:**
+
+```html
+<div x-data="{ languages: [] }">
+    <select x-name="languages" multiple>
+        <option value="js">JavaScript</option>
+        <option value="php">PHP</option>
+        <option value="py">Python</option>
+    </select>
+    <!-- State: { languages: ['js', 'php'] } when both selected -->
+</div>
+```
+
+#### Modifiers
+
+| Modifier | Description |
+|----------|-------------|
+| `.lazy` | Update on blur instead of input |
+| `.number` | Parse value as number |
+| `.trim` | Trim whitespace |
+| `.array` | Force array mode for checkboxes |
+
+**Examples:**
+
+```html
+<!-- Update only on blur (not every keystroke) -->
+<input x-name.lazy="search" type="text">
+
+<!-- Coerce to number -->
+<input x-name.number="quantity" type="text">
+
+<!-- Trim whitespace -->
+<input x-name.trim="username" type="text">
+
+<!-- Combine modifiers -->
+<input x-name.lazy.trim="bio" type="text">
+```
+
+#### File Inputs
+
+File inputs are automatically delegated to the `x-files` system:
+
+```html
+<div x-data>
+    <input x-name="avatar" type="file">
+    <!-- Equivalent to: <input x-files="avatar" name="avatar" type="file"> -->
+
+    <p x-show="$file('avatar')">
+        Selected: <span x-text="$file('avatar')?.name"></span>
+    </p>
+</div>
+```
+
+#### Server Integration
+
+Forms using `x-name` work seamlessly with Gale's HTTP magics:
+
+```html
+<div x-data="{ firstName: '', lastName: '', response: '' }">
+    <input x-name="firstName" type="text" placeholder="First name">
+    <input x-name="lastName" type="text" placeholder="Last name">
+
+    <button @click="$postx('/api/greet')">Submit</button>
+
+    <p x-text="response"></p>
+</div>
+```
+
+```php
+Route::post('/api/greet', function (Request $request) {
+    $firstName = $request->state('firstName');
+    $lastName = $request->state('lastName');
+
+    return gale()->state([
+        'response' => "Hello, {$firstName} {$lastName}!"
+    ]);
+});
+```
+
+#### Integration with x-message
+
+Field names from `x-name` map directly to Laravel validation error keys:
+
+```html
+<div x-data="{ email: '' }">
+    <input x-name="email" type="email">
+    <span x-message="email" class="text-red-500"></span>
+
+    <button @click="$postx('/subscribe')">Subscribe</button>
+</div>
+```
+
+```php
+Route::post('/subscribe', function (Request $request) {
+    $request->validate([
+        'state.email' => 'required|email'
+    ]);
+
+    // Process subscription...
+});
+```
+
 ### File Uploads
 
 #### x-files Directive
@@ -1961,6 +2192,7 @@ return gale()
 | `x-navigate`         | Enable SPA navigation    |
 | `x-navigate-skip`    | Skip navigation handling |
 | `x-component="name"` | Register named component |
+| `x-name="field"`     | Form binding with state  |
 | `x-files`            | File input binding       |
 | `x-message="key"`    | Display message          |
 | `x-loading`          | Loading state display    |
