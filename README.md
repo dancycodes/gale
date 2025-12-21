@@ -1538,42 +1538,53 @@ Alpine.gale.configureMessage({
 });
 ```
 
-### Polling
+### Interval Execution
 
-#### x-poll Directive
+#### x-interval Directive
+
+Runs Alpine expressions at configurable intervals. Like `x-init`, but repeating.
 
 ```html
-<!-- Default 5 second interval -->
-<div x-data="{ status: '' }" x-poll="/api/status">
+<!-- Basic: increment every second -->
+<div x-data="{ count: 0 }" x-interval.1s="count++">
+    <span x-text="count"></span>
+</div>
+
+<!-- HTTP polling using $get -->
+<div x-data="{ status: '' }" x-interval.5s="$get('/api/status')">
     <span x-text="status"></span>
 </div>
 
-<!-- Custom interval -->
-<div x-poll.2s="/api/data">...</div>
-<div x-poll.500ms="/api/live">...</div>
-<div x-poll.30s="/api/stats">...</div>
+<!-- Multiple expressions -->
+<div x-data="{ tick: 0 }" x-interval.2s="tick++; checkStatus()">...</div>
+
+<!-- Fast interval (500ms) -->
+<div x-interval.500ms="$get('/api/live')">...</div>
 ```
 
 #### Modifiers
 
 ```html
-<!-- Only poll when visible -->
-<div x-poll.visible.5s="/api/status">...</div>
+<!-- Only run when tab is visible -->
+<div x-interval.visible.5s="$get('/api/status')">...</div>
 
-<!-- With CSRF -->
-<div x-poll.csrf.5s="/api/protected">...</div>
+<!-- CSRF-protected requests (use $postx/$getx) -->
+<div x-interval.2s="$postx('/api/protected')">...</div>
 
 <!-- Stop on condition -->
-<div x-data="{ done: false }" x-poll.2s="/api/job" x-poll-stop="done">
+<div x-data="{ done: false, progress: 0 }"
+     x-interval.1s="progress += 10; done = progress >= 100"
+     x-interval-stop="done">
     Processing...
 </div>
 ```
 
-| Modifier   | Description                           |
-| ---------- | ------------------------------------- |
-| `.{time}`  | Poll interval (e.g., `.5s`, `.500ms`) |
-| `.visible` | Only poll when tab visible            |
-| `.csrf`    | Include CSRF token                    |
+| Modifier   | Description                              |
+| ---------- | ---------------------------------------- |
+| `.{time}`  | Interval duration (e.g., `.5s`, `.500ms`) |
+| `.visible` | Only run when tab visible                |
+
+**Note:** For CSRF-protected requests, use `$postx()` or other CSRF magics within the expression.
 
 ### Confirmation Dialogs
 
