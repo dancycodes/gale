@@ -43,7 +43,7 @@ class InstallCommand extends Command
             '--force' => true,
         ]);
 
-        $this->components->task('Publishing Gale assets', fn () => true);
+        $this->components->task('Publishing Gale assets', fn() => true);
 
         $this->newLine();
         $this->components->info('Gale installed successfully!');
@@ -59,7 +59,7 @@ class InstallCommand extends Command
         $this->components->warn('If you have existing Alpine.js, remove it. Gale includes Alpine.js v3 + Morph.');
 
         $this->newLine();
-        $this->line('  <fg=gray>Read the docs:</> <href=https://github.com/dancycodes/gale>https://github.com/dancycodes/gale</>');
+        $this->line('  <fg=gray>Read the docs:</> <href=https://dancycodes.com/gale>https://dancycodes.com/gale</>');
 
         return Command::SUCCESS;
     }
