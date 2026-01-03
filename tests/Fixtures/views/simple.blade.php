@@ -3,4 +3,8 @@
     @if(isset($message))
         <p>{{ $message }}</p>
     @endif
+
+    @fragment('content')
+        <div id="content">Simple content - {{ Str::random(8) }}</div>
+    @endfragment
 </div>

@@ -112,8 +112,7 @@ class GaleResponse implements Responsable
      * from a specific point if the connection is lost. The browser will send
      * the last event ID in the Last-Event-ID header when reconnecting.
      *
-     * @param string $id Unique identifier for the event
-     *
+     * @param  string  $id  Unique identifier for the event
      * @return static Returns this instance for method chaining
      */
     public function withEventId(string $id): self
@@ -130,8 +129,7 @@ class GaleResponse implements Responsable
      * wait before attempting to reconnect after the connection is lost.
      * Default per SSE spec is 1000ms (1 second).
      *
-     * @param int $milliseconds Reconnection time in milliseconds
-     *
+     * @param  int  $milliseconds  Reconnection time in milliseconds
      * @return static Returns this instance for method chaining
      */
     public function withRetry(int $milliseconds): self
@@ -147,11 +145,10 @@ class GaleResponse implements Responsable
      * Compiles the specified Blade view with provided data and sends the rendered HTML
      * as a DOM patch event. Only processes for Gale requests unless $web is true.
      *
-     * @param string $view Blade view name (dot notation supported)
-     * @param array<string, mixed> $data Variables to pass to the view template
-     * @param array<string, mixed> $options DOM patching options (selector, mode, useViewTransition)
-     * @param bool $web Whether to set this view as the fallback for non-Gale requests
-     *
+     * @param  string  $view  Blade view name (dot notation supported)
+     * @param  array<string, mixed>  $data  Variables to pass to the view template
+     * @param  array<string, mixed>  $options  DOM patching options (selector, mode, useViewTransition)
+     * @param  bool  $web  Whether to set this view as the fallback for non-Gale requests
      * @return static Returns this instance for method chaining
      */
     public function view(string $view, array $data = [], array $options = [], bool $web = false): self
@@ -163,7 +160,7 @@ class GaleResponse implements Responsable
         }
 
         /** @phpstan-ignore method.notFound (isGale is a Request macro) */
-        if (!request()->isGale()) {
+        if (! request()->isGale()) {
             return $this;
         }
 
@@ -179,11 +176,10 @@ class GaleResponse implements Responsable
      * Extracts and renders only the specified fragment from the Blade view, avoiding
      * full view compilation. Fragments are defined using @fragment/@endfragment directives.
      *
-     * @param string $view Blade view containing the target fragment
-     * @param string $fragment Name of the fragment to render
-     * @param array<string, mixed> $data Variables to pass to the fragment
-     * @param array<string, mixed> $options DOM patching options (selector, mode, useViewTransition)
-     *
+     * @param  string  $view  Blade view containing the target fragment
+     * @param  string  $fragment  Name of the fragment to render
+     * @param  array<string, mixed>  $data  Variables to pass to the fragment
+     * @param  array<string, mixed>  $options  DOM patching options (selector, mode, useViewTransition)
      * @return static Returns this instance for method chaining
      */
     public function fragment(string $view, string $fragment, array $data = [], array $options = []): self
@@ -197,8 +193,7 @@ class GaleResponse implements Responsable
      * Processes multiple fragment specifications in a single method call, where each
      * fragment configuration specifies the view, fragment name, data, and patch options.
      *
-     * @param array<int, array{view: string, fragment: string, data?: array<string, mixed>, options?: array<string, mixed>}> $fragments Array of fragment configurations
-     *
+     * @param  array<int, array{view: string, fragment: string, data?: array<string, mixed>, options?: array<string, mixed>}>  $fragments  Array of fragment configurations
      * @return static Returns this instance for method chaining
      */
     public function fragments(array $fragments): self
@@ -212,10 +207,9 @@ class GaleResponse implements Responsable
      * Sends arbitrary HTML content as a DOM patch event without view compilation.
      * Useful for dynamically generated markup or client-provided HTML strings.
      *
-     * @param string $html Raw HTML markup to patch
-     * @param array<string, mixed> $options DOM patching options (selector, mode, useViewTransition)
-     * @param bool $web Whether to set this HTML as the fallback for non-Gale requests
-     *
+     * @param  string  $html  Raw HTML markup to patch
+     * @param  array<string, mixed>  $options  DOM patching options (selector, mode, useViewTransition)
+     * @param  bool  $web  Whether to set this HTML as the fallback for non-Gale requests
      * @return static Returns this instance for method chaining
      */
     public function html(string $html, array $options = [], bool $web = false): self
@@ -225,7 +219,7 @@ class GaleResponse implements Responsable
         }
 
         /** @phpstan-ignore method.notFound (isGale is a Request macro) */
-        if (!request()->isGale()) {
+        if (! request()->isGale()) {
             return $this;
         }
 
@@ -239,16 +233,15 @@ class GaleResponse implements Responsable
      * component registered with x-component directive. Uses RFC 7386 JSON
      * Merge Patch semantics.
      *
-     * @param string $componentName Name of the component (from x-component attribute)
-     * @param array<string, mixed> $state State updates (key-value pairs)
-     * @param array<string, mixed> $options Optional: onlyIfMissing
-     *
+     * @param  string  $componentName  Name of the component (from x-component attribute)
+     * @param  array<string, mixed>  $state  State updates (key-value pairs)
+     * @param  array<string, mixed>  $options  Optional: onlyIfMissing
      * @return static Returns this instance for method chaining
      */
     public function componentState(string $componentName, array $state, array $options = []): self
     {
         /** @phpstan-ignore method.notFound (isGale is a Request macro) */
-        if (!request()->isGale()) {
+        if (! request()->isGale()) {
             return $this;
         }
 
@@ -265,16 +258,15 @@ class GaleResponse implements Responsable
      * registered with x-component directive. The method must exist on the
      * component's Alpine x-data object.
      *
-     * @param string $componentName Name of the component (from x-component attribute)
-     * @param string $method Method name to invoke
-     * @param array<int, mixed> $args Arguments to pass to the method
-     *
+     * @param  string  $componentName  Name of the component (from x-component attribute)
+     * @param  string  $method  Method name to invoke
+     * @param  array<int, mixed>  $args  Arguments to pass to the method
      * @return static Returns this instance for method chaining
      */
     public function componentMethod(string $componentName, string $method, array $args = []): self
     {
         /** @phpstan-ignore method.notFound (isGale is a Request macro) */
-        if (!request()->isGale()) {
+        if (! request()->isGale()) {
             return $this;
         }
 
@@ -291,10 +283,9 @@ class GaleResponse implements Responsable
      * JSON Merge Patch semantics. Accepts either a single key-value pair or an
      * associative array of multiple state values.
      *
-     * @param string|array<string, mixed> $key State key or associative array of state
-     * @param mixed $value State value when $key is a string, ignored when $key is array
-     * @param array<string, mixed> $options State options (onlyIfMissing)
-     *
+     * @param  string|array<string, mixed>  $key  State key or associative array of state
+     * @param  mixed  $value  State value when $key is a string, ignored when $key is array
+     * @param  array<string, mixed>  $options  State options (onlyIfMissing)
      * @return static Returns this instance for method chaining
      */
     public function state(string|array $key, mixed $value = null, array $options = []): self
@@ -317,8 +308,7 @@ class GaleResponse implements Responsable
      * - Success messages: gale()->messages(['_success' => 'Profile saved!'])
      * - Clear all: gale()->clearMessages()
      *
-     * @param array<string, string> $messages Field names mapped to message strings
-     *
+     * @param  array<string, string>  $messages  Field names mapped to message strings
      * @return static Returns this instance for method chaining
      */
     public function messages(array $messages): self
@@ -346,8 +336,7 @@ class GaleResponse implements Responsable
      * semantics where null values indicate deletion. Specific state keys must be
      * provided as the frontend manages its own state.
      *
-     * @param string|array<int, string>|null $state State key(s) to delete, or null (no-op)
-     *
+     * @param  string|array<int, string>|null  $state  State key(s) to delete, or null (no-op)
      * @return static Returns this instance for method chaining
      */
     public function forget(string|array|null $state = null): self
@@ -369,9 +358,8 @@ class GaleResponse implements Responsable
      * Injects and executes JavaScript code by creating a script element in the DOM.
      * The script element is automatically removed after execution unless configured otherwise.
      *
-     * @param string $script JavaScript code to execute
-     * @param array<string, mixed> $options Script element options (attributes, autoRemove)
-     *
+     * @param  string  $script  JavaScript code to execute
+     * @param  array<string, mixed>  $options  Script element options (attributes, autoRemove)
      * @return static Returns this instance for method chaining
      */
     public function js(string $script, array $options = []): self
@@ -387,18 +375,17 @@ class GaleResponse implements Responsable
      * through the event.detail property. Supports standard CustomEvent options including
      * bubbling, cancelable, and composed properties.
      *
-     * @param string $eventName Name of the CustomEvent to dispatch
-     * @param array<string, mixed> $data Event payload accessible via event.detail
-     * @param array<string, mixed> $options Dispatch configuration (selector, window, bubbles, cancelable, composed)
+     * @param  string  $eventName  Name of the CustomEvent to dispatch
+     * @param  array<string, mixed>  $data  Event payload accessible via event.detail
+     * @param  array<string, mixed>  $options  Dispatch configuration (selector, window, bubbles, cancelable, composed)
+     * @return static Returns this instance for method chaining
      *
      * @throws \InvalidArgumentException When event name is empty
-     *
-     * @return static Returns this instance for method chaining
      */
     public function dispatch(string $eventName, array $data = [], array $options = []): self
     {
         /** @phpstan-ignore method.notFound (isGale is a Request macro) */
-        if (!request()->isGale()) {
+        if (! request()->isGale()) {
             return $this;
         }
 
@@ -409,7 +396,7 @@ class GaleResponse implements Responsable
 
         // Extract options with defaults
         $selector = $options['selector'] ?? null;
-        $window = $options['window'] ?? (!$selector); // Default to window if no selector
+        $window = $options['window'] ?? (! $selector); // Default to window if no selector
         $bubbles = $options['bubbles'] ?? true;
         $cancelable = $options['cancelable'] ?? true;
         $composed = $options['composed'] ?? true;
@@ -477,8 +464,7 @@ class GaleResponse implements Responsable
      *
      * Deletes all elements matching the specified CSS selector from the document.
      *
-     * @param string $selector CSS selector targeting elements to remove
-     *
+     * @param  string  $selector  CSS selector targeting elements to remove
      * @return static Returns this instance for method chaining
      */
     public function remove(string $selector): self
@@ -492,9 +478,8 @@ class GaleResponse implements Responsable
      * Inserts the provided HTML inside targeted elements, after their existing children.
      * Corresponds to Datastar patch mode 'append'.
      *
-     * @param string $selector CSS selector targeting parent elements
-     * @param string $html HTML markup to append
-     *
+     * @param  string  $selector  CSS selector targeting parent elements
+     * @param  string  $html  HTML markup to append
      * @return static Returns this instance for method chaining
      */
     public function append(string $selector, string $html): self
@@ -511,9 +496,8 @@ class GaleResponse implements Responsable
      * Inserts the provided HTML inside targeted elements, before their existing children.
      * Corresponds to Datastar patch mode 'prepend'.
      *
-     * @param string $selector CSS selector targeting parent elements
-     * @param string $html HTML markup to prepend
-     *
+     * @param  string  $selector  CSS selector targeting parent elements
+     * @param  string  $html  HTML markup to prepend
      * @return static Returns this instance for method chaining
      */
     public function prepend(string $selector, string $html): self
@@ -530,9 +514,8 @@ class GaleResponse implements Responsable
      * Substitutes all elements matching the selector with the provided HTML markup.
      * Corresponds to Datastar patch mode 'replace'.
      *
-     * @param string $selector CSS selector targeting elements to replace
-     * @param string $html Replacement HTML markup
-     *
+     * @param  string  $selector  CSS selector targeting elements to replace
+     * @param  string  $html  Replacement HTML markup
      * @return static Returns this instance for method chaining
      */
     public function replace(string $selector, string $html): self
@@ -549,9 +532,8 @@ class GaleResponse implements Responsable
      * Places the provided HTML as a sibling before each targeted element.
      * Corresponds to Datastar patch mode 'before'.
      *
-     * @param string $selector CSS selector targeting reference elements
-     * @param string $html HTML markup to insert
-     *
+     * @param  string  $selector  CSS selector targeting reference elements
+     * @param  string  $html  HTML markup to insert
      * @return static Returns this instance for method chaining
      */
     public function before(string $selector, string $html): self
@@ -568,9 +550,8 @@ class GaleResponse implements Responsable
      * Places the provided HTML as a sibling after each targeted element.
      * Corresponds to Datastar patch mode 'after'.
      *
-     * @param string $selector CSS selector targeting reference elements
-     * @param string $html HTML markup to insert
-     *
+     * @param  string  $selector  CSS selector targeting reference elements
+     * @param  string  $html  HTML markup to insert
      * @return static Returns this instance for method chaining
      */
     public function after(string $selector, string $html): self
@@ -587,9 +568,8 @@ class GaleResponse implements Responsable
      * Replaces all children of targeted elements with the provided HTML markup, preserving
      * the elements themselves. Corresponds to Datastar patch mode 'inner'.
      *
-     * @param string $selector CSS selector targeting container elements
-     * @param string $html HTML markup for new inner content
-     *
+     * @param  string  $selector  CSS selector targeting container elements
+     * @param  string  $html  HTML markup for new inner content
      * @return static Returns this instance for method chaining
      */
     public function inner(string $selector, string $html): self
@@ -606,9 +586,8 @@ class GaleResponse implements Responsable
      * Replaces targeted elements entirely including the elements themselves and their children.
      * Corresponds to Datastar patch mode 'outer'.
      *
-     * @param string $selector CSS selector targeting elements to replace
-     * @param string $html HTML markup for complete replacement
-     *
+     * @param  string  $selector  CSS selector targeting elements to replace
+     * @param  string  $html  HTML markup for complete replacement
      * @return static Returns this instance for method chaining
      */
     public function outer(string $selector, string $html): self
@@ -626,9 +605,8 @@ class GaleResponse implements Responsable
      * and patching options. Behavior depends on response mode: accumulates in normal mode,
      * sends immediately in streaming mode.
      *
-     * @param string $elements HTML markup to patch
-     * @param array<string, mixed> $options Patching configuration (selector, mode, useViewTransition)
-     *
+     * @param  string  $elements  HTML markup to patch
+     * @param  array<string, mixed>  $options  Patching configuration (selector, mode, useViewTransition)
      * @return static Returns this instance for method chaining
      */
     protected function patchElements(string $elements, array $options = []): self
@@ -647,15 +625,14 @@ class GaleResponse implements Responsable
      * properties and other values are merged. Only processes for Gale requests
      * to avoid unnecessary computation.
      *
-     * @param array<string, mixed> $state Associative array of state keys and values
-     * @param array<string, mixed> $options State update options (onlyIfMissing)
-     *
+     * @param  array<string, mixed>  $state  Associative array of state keys and values
+     * @param  array<string, mixed>  $options  State update options (onlyIfMissing)
      * @return static Returns this instance for method chaining
      */
     protected function patchState(array $state, array $options = []): self
     {
         /** @phpstan-ignore method.notFound (isGale is a Request macro) */
-        if (!request()->isGale()) {
+        if (! request()->isGale()) {
             return $this;
         }
 
@@ -672,9 +649,8 @@ class GaleResponse implements Responsable
      * Behavior depends on response mode: accumulates in normal mode, sends immediately
      * in streaming mode.
      *
-     * @param string $script JavaScript code to execute
-     * @param array<string, mixed> $options Script configuration (attributes, autoRemove)
-     *
+     * @param  string  $script  JavaScript code to execute
+     * @param  array<string, mixed>  $options  Script configuration (attributes, autoRemove)
      * @return static Returns this instance for method chaining
      */
     protected function executeScript(string $script, array $options = []): self
@@ -692,9 +668,8 @@ class GaleResponse implements Responsable
      * Behavior depends on response mode: accumulates in normal mode, sends immediately
      * in streaming mode.
      *
-     * @param string $selector CSS selector targeting elements to remove
-     * @param array<string, mixed> $options Removal configuration (useViewTransition)
-     *
+     * @param  string  $selector  CSS selector targeting elements to remove
+     * @param  array<string, mixed>  $options  Removal configuration (useViewTransition)
      * @return static Returns this instance for method chaining
      */
     protected function removeElements(string $selector, array $options = []): self
@@ -714,8 +689,7 @@ class GaleResponse implements Responsable
      * with Laravel session flash data. Redirects perform JavaScript-based navigation using
      * window.location assignments rather than reactive signal updates.
      *
-     * @param string $url Target URL for the redirect
-     *
+     * @param  string  $url  Target URL for the redirect
      * @return \Dancycodes\Gale\Http\GaleRedirect Redirect builder instance
      */
     public function redirect(string $url): GaleRedirect
@@ -735,8 +709,7 @@ class GaleResponse implements Responsable
      * dd() and dump() are handled naturally by Laravel - output is captured via shutdown
      * function (for dd() which calls exit) or output buffer (for dump()).
      *
-     * @param \Closure $callback Function receiving this instance in streaming mode
-     *
+     * @param  \Closure  $callback  Function receiving this instance in streaming mode
      * @return static Returns this instance for method chaining
      */
     public function stream(Closure $callback): self
@@ -774,9 +747,10 @@ class GaleResponse implements Responsable
     protected function overrideRedirectForStream(): void
     {
         app()->bind('redirect', function () {
-            return new class {
+            return new class
+            {
                 /**
-                 * @param array<string, mixed> $headers
+                 * @param  array<string, mixed>  $headers
                  */
                 public function to(string $path, int $status = 302, array $headers = [], ?bool $secure = null): never
                 {
@@ -784,8 +758,8 @@ class GaleResponse implements Responsable
                 }
 
                 /**
-                 * @param array<string, mixed> $params
-                 * @param array<string, mixed> $headers
+                 * @param  array<string, mixed>  $params
+                 * @param  array<string, mixed>  $headers
                  */
                 public function route(string $route, array $params = [], int $status = 302, array $headers = []): never
                 {
@@ -793,7 +767,7 @@ class GaleResponse implements Responsable
                 }
 
                 /**
-                 * @param array<string, mixed> $headers
+                 * @param  array<string, mixed>  $headers
                  */
                 public function back(int $status = 302, array $headers = [], string|bool $fallback = false): never
                 {
@@ -803,7 +777,7 @@ class GaleResponse implements Responsable
                 private function performRealRedirect(string $url): never
                 {
                     echo "event: gale-patch-elements\n";
-                    echo 'data: elements <script>window.location.href = ' . json_encode($url) . ";</script>\n";
+                    echo 'data: elements <script>window.location.href = '.json_encode($url).";</script>\n";
                     echo "data: selector body\n";
                     echo "data: mode append\n\n";
 
@@ -815,7 +789,7 @@ class GaleResponse implements Responsable
                 }
 
                 /**
-                 * @param array<int, mixed> $args
+                 * @param  array<int, mixed>  $args
                  */
                 public function __call(string $method, array $args): mixed
                 {
@@ -844,11 +818,11 @@ class GaleResponse implements Responsable
         // Get any buffered output (from dd(), dump(), echo, etc.)
         $output = '';
         while (ob_get_level() > 0) {
-            $output = ob_get_clean() . $output;
+            $output = ob_get_clean().$output;
         }
 
         // If there's output, send it to replace the document
-        if (!empty(trim($output))) {
+        if (! empty(trim($output))) {
             // Check if output looks like HTML (dd/dump output includes HTML)
             if ($this->looksLikeHtml($output)) {
                 // Wrap in basic HTML structure if it doesn't have doctype
@@ -859,7 +833,7 @@ class GaleResponse implements Responsable
     <meta charset="UTF-8">
     <title>Laravel Output</title>
 </head>
-<body>' . $output . '</body>
+<body>'.$output.'</body>
 </html>';
                 }
             } else {
@@ -871,14 +845,14 @@ class GaleResponse implements Responsable
     <title>Laravel Output</title>
 </head>
 <body style="background: #18171B; color: white; font-family: monospace; padding: 20px;">
-<pre>' . htmlspecialchars($output) . '</pre>
+<pre>'.htmlspecialchars($output).'</pre>
 </body>
 </html>';
             }
 
             // Send via SSE to replace document
             echo "event: gale-patch-elements\n";
-            echo 'data: elements <script>document.open(); document.write(' . json_encode($output) . "); document.close();</script>\n";
+            echo 'data: elements <script>document.open(); document.write('.json_encode($output)."); document.close();</script>\n";
             echo "data: selector body\n";
             echo "data: mode append\n\n";
             flush();
@@ -915,7 +889,7 @@ class GaleResponse implements Responsable
             return;
         }
 
-        if (!empty(trim($output))) {
+        if (! empty(trim($output))) {
             // Check if output looks like HTML (Laravel's native dd/dump includes HTML)
             if ($this->looksLikeHtml($output)) {
                 // Wrap in basic HTML structure if it doesn't have doctype
@@ -926,7 +900,7 @@ class GaleResponse implements Responsable
     <meta charset="UTF-8">
     <title>Laravel Output</title>
 </head>
-<body>' . $output . '</body>
+<body>'.$output.'</body>
 </html>';
                 } else {
                     $html = $output;
@@ -940,7 +914,7 @@ class GaleResponse implements Responsable
     <title>Laravel Output</title>
 </head>
 <body style="background: #18171B; color: white; font-family: monospace; padding: 20px;">
-<pre>' . htmlspecialchars($output) . '</pre>
+<pre>'.htmlspecialchars($output).'</pre>
 </body>
 </html>';
             }
@@ -956,12 +930,12 @@ class GaleResponse implements Responsable
      * and terminates the SSE stream. Used for showing full-page content during streaming
      * such as dump output, exceptions, or direct output captures.
      *
-     * @param string $html Complete HTML document to display
+     * @param  string  $html  Complete HTML document to display
      */
     protected function replaceDocumentAndExit(string $html): void
     {
         echo "event: gale-patch-elements\n";
-        echo 'data: elements <script>document.open(); document.write(' . json_encode($html) . "); document.close();</script>\n";
+        echo 'data: elements <script>document.open(); document.write('.json_encode($html)."); document.close();</script>\n";
         echo "data: selector body\n";
         echo "data: mode append\n\n";
 
@@ -991,7 +965,7 @@ class GaleResponse implements Responsable
      * error pages (Ignition in development, generic in production). Falls back to basic
      * error HTML if exception handler itself throws an exception.
      *
-     * @param \Throwable $e Exception to render
+     * @param  \Throwable  $e  Exception to render
      */
     protected function handleNativeException(\Throwable $e): void
     {
@@ -1015,8 +989,7 @@ class GaleResponse implements Responsable
      * Creates minimal error page displaying exception message, file location, and stack
      * trace. Used as fallback when Laravel's exception handler itself throws an exception.
      *
-     * @param \Throwable $e Original exception
-     *
+     * @param  \Throwable  $e  Original exception
      * @return string HTML error page
      */
     protected function generateFallbackErrorHtml(\Throwable $e): string
@@ -1026,9 +999,9 @@ class GaleResponse implements Responsable
 <head><title>Error</title></head>
 <body style="background: #ef4444; color: white; padding: 20px; font-family: monospace;">
     <h1>Exception in Stream</h1>
-    <p><strong>Message:</strong> ' . htmlspecialchars($e->getMessage()) . '</p>
-    <p><strong>File:</strong> ' . htmlspecialchars($e->getFile()) . ':' . $e->getLine() . '</p>
-    <pre style="background: rgba(0,0,0,0.2); padding: 15px; border-radius: 5px;">' . htmlspecialchars($e->getTraceAsString()) . '</pre>
+    <p><strong>Message:</strong> '.htmlspecialchars($e->getMessage()).'</p>
+    <p><strong>File:</strong> '.htmlspecialchars($e->getFile()).':'.$e->getLine().'</p>
+    <pre style="background: rgba(0,0,0,0.2); padding: 15px; border-radius: 5px;">'.htmlspecialchars($e->getTraceAsString()).'</pre>
 </body>
 </html>';
     }
@@ -1041,11 +1014,10 @@ class GaleResponse implements Responsable
      * For Gale requests, creates a StreamedResponse with SSE headers that outputs either
      * accumulated events (normal mode) or executes streaming callback (streaming mode).
      *
-     * @param \Illuminate\Http\Request|null $request Laravel request instance or null for auto-detection
+     * @param  \Illuminate\Http\Request|null  $request  Laravel request instance or null for auto-detection
+     * @return \Symfony\Component\HttpFoundation\StreamedResponse|mixed StreamedResponse for Gale, fallback for web
      *
      * @throws \LogicException When no web fallback provided for non-Gale request
-     *
-     * @return \Symfony\Component\HttpFoundation\StreamedResponse|mixed StreamedResponse for Gale, fallback for web
      */
     public function toResponse($request = null): mixed
     {
@@ -1059,7 +1031,7 @@ class GaleResponse implements Responsable
 
         // Handle non-Gale requests
         /** @phpstan-ignore method.notFound (isGale is a Request macro) */
-        if (!$request->isGale()) {
+        if (! $request->isGale()) {
             if ($webResponse === null) {
                 // Return 204 No Content for API routes without web fallback
                 // This makes componentState(), state(), etc. gracefully handle non-Gale requests
@@ -1104,13 +1076,13 @@ class GaleResponse implements Responsable
      * the response is in streaming or normal mode. Short-circuits immediately for non-Gale
      * requests to avoid unnecessary processing.
      *
-     * @param string $eventType SSE event type (datastar-patch-elements, datastar-patch-signals)
-     * @param array<int, string> $dataLines SSE data lines for the event
+     * @param  string  $eventType  SSE event type (datastar-patch-elements, datastar-patch-signals)
+     * @param  array<int, string>  $dataLines  SSE data lines for the event
      */
     protected function handleEvent(string $eventType, array $dataLines): void
     {
         /** @phpstan-ignore method.notFound (isGale is a Request macro) */
-        if (!request()->isGale()) {
+        if (! request()->isGale()) {
             return;
         }
 
@@ -1154,7 +1126,7 @@ class GaleResponse implements Responsable
     /**
      * Execute single-shot mode with provided events
      *
-     * @param array<int, string> $events Events to output
+     * @param  array<int, string>  $events  Events to output
      */
     protected function executeSingleShotModeWithEvents(array $events): void
     {
@@ -1167,7 +1139,7 @@ class GaleResponse implements Responsable
     /**
      * Execute streaming mode with provided callback
      *
-     * @param Closure $callback Callback function
+     * @param  Closure  $callback  Callback function
      */
     protected function executeStreamingModeWithCallback(Closure $callback): void
     {
@@ -1183,14 +1155,33 @@ class GaleResponse implements Responsable
      * Formats and outputs event directly, then flushes buffers to ensure immediate
      * transmission. Used exclusively in streaming mode.
      *
-     * @param string $eventType SSE event type
-     * @param array<int, string> $dataLines SSE data lines
+     * @param  string  $eventType  SSE event type
+     * @param  array<int, string>  $dataLines  SSE data lines
      */
     protected function sendEventImmediately(string $eventType, array $dataLines): void
     {
         $output = $this->formatEvent($eventType, $dataLines);
+
+        // Get current buffer level so we can bypass ALL buffers
+        // This prevents the stream() method's output buffer from capturing SSE events
+        $bufferLevel = ob_get_level();
+        $bufferContents = [];
+
+        // Save and end all output buffers temporarily
+        while (ob_get_level() > 0) {
+            $bufferContents[] = ob_get_contents();
+            ob_end_clean();
+        }
+
+        // Output the SSE event directly (not captured by any buffer)
         echo $output;
-        $this->flushOutput();
+        flush();
+
+        // Restart the buffers with their original content
+        for ($i = count($bufferContents) - 1; $i >= 0; $i--) {
+            ob_start();
+            echo $bufferContents[$i];
+        }
     }
 
     /**
@@ -1199,8 +1190,8 @@ class GaleResponse implements Responsable
      * Stores event for later transmission when response is converted. Used exclusively
      * in normal mode before stream() is called.
      *
-     * @param string $eventType SSE event type
-     * @param array<int, string> $dataLines SSE data lines
+     * @param  string  $eventType  SSE event type
+     * @param  array<int, string>  $dataLines  SSE data lines
      */
     protected function addEventToQueue(string $eventType, array $dataLines): void
     {
@@ -1234,9 +1225,8 @@ class GaleResponse implements Responsable
      * - data: <line>         (one or more data lines)
      * - <blank line>         (terminates the event)
      *
-     * @param string $eventType Event type line (event: xxx)
-     * @param array<int, string> $dataLines Data payload lines (data: xxx)
-     *
+     * @param  string  $eventType  Event type line (event: xxx)
+     * @param  array<int, string>  $dataLines  Data payload lines (data: xxx)
      * @return string Formatted SSE event block
      */
     protected function formatEvent(string $eventType, array $dataLines): string
@@ -1263,7 +1253,7 @@ class GaleResponse implements Responsable
 
         $output[] = '';
 
-        return implode("\n", $output) . "\n";
+        return implode("\n", $output)."\n";
     }
 
     /**
@@ -1272,39 +1262,38 @@ class GaleResponse implements Responsable
      * Constructs array of SSE data lines for datastar-patch-elements event including
      * selector, mode, view transition flag, settle time, limit, and multi-line HTML element content.
      *
-     * @param string $elements HTML content to patch
-     * @param array<string, mixed> $options Patching options (selector, mode, useViewTransition, settle, limit)
-     *
+     * @param  string  $elements  HTML content to patch
+     * @param  array<string, mixed>  $options  Patching options (selector, mode, useViewTransition, settle, limit)
      * @return array<int, string> Array of SSE data lines
      */
     protected function buildElementsEvent(string $elements, array $options): array
     {
         $dataLines = [];
 
-        if (!empty($options['selector'])) {
+        if (! empty($options['selector'])) {
             /** @phpstan-ignore cast.string (mixed array value, safe to cast) */
-            $dataLines[] = 'selector ' . (string) $options['selector'];
+            $dataLines[] = 'selector '.(string) $options['selector'];
         }
 
-        if (!empty($options['mode'])) {
+        if (! empty($options['mode'])) {
             /** @phpstan-ignore cast.string (mixed array value, safe to cast) */
-            $dataLines[] = 'mode ' . (string) $options['mode'];
+            $dataLines[] = 'mode '.(string) $options['mode'];
         }
 
-        if (!empty($options['useViewTransition'])) {
+        if (! empty($options['useViewTransition'])) {
             $dataLines[] = 'useViewTransition true';
         }
 
         // Settle time for CSS transitions (in milliseconds)
-        if (!empty($options['settle'])) {
+        if (! empty($options['settle'])) {
             /** @phpstan-ignore cast.int (mixed array value from user options, expected numeric) */
-            $dataLines[] = 'settle ' . (int) $options['settle'];
+            $dataLines[] = 'settle '.(int) $options['settle'];
         }
 
         // Limit number of targets to patch
-        if (!empty($options['limit'])) {
+        if (! empty($options['limit'])) {
             /** @phpstan-ignore cast.int (mixed array value from user options, expected numeric) */
-            $dataLines[] = 'limit ' . (int) $options['limit'];
+            $dataLines[] = 'limit '.(int) $options['limit'];
         }
 
         $elementLines = explode("\n", trim($elements));
@@ -1322,16 +1311,15 @@ class GaleResponse implements Responsable
      * onlyIfMissing flag and JSON-encoded state data split across multiple lines.
      * Uses RFC 7386 JSON Merge Patch semantics.
      *
-     * @param array<string, mixed> $state State keys and values to patch
-     * @param array<string, mixed> $options State options (onlyIfMissing)
-     *
+     * @param  array<string, mixed>  $state  State keys and values to patch
+     * @param  array<string, mixed>  $options  State options (onlyIfMissing)
      * @return array<int, string> Array of SSE data lines
      */
     protected function buildStateEvent(array $state, array $options): array
     {
         $dataLines = [];
 
-        if (!empty($options['onlyIfMissing'])) {
+        if (! empty($options['onlyIfMissing'])) {
             $dataLines[] = 'onlyIfMissing true';
         }
 
@@ -1352,10 +1340,9 @@ class GaleResponse implements Responsable
      * Constructs array of SSE data lines for gale-patch-component event including
      * component name, onlyIfMissing flag, and JSON-encoded state data.
      *
-     * @param string $componentName Component name (from x-component attribute)
-     * @param array<string, mixed> $state State keys and values to patch
-     * @param array<string, mixed> $options State options (onlyIfMissing)
-     *
+     * @param  string  $componentName  Component name (from x-component attribute)
+     * @param  array<string, mixed>  $state  State keys and values to patch
+     * @param  array<string, mixed>  $options  State options (onlyIfMissing)
      * @return array<int, string> Array of SSE data lines
      */
     protected function buildComponentEvent(string $componentName, array $state, array $options): array
@@ -1365,7 +1352,7 @@ class GaleResponse implements Responsable
         // Component name
         $dataLines[] = "component {$componentName}";
 
-        if (!empty($options['onlyIfMissing'])) {
+        if (! empty($options['onlyIfMissing'])) {
             $dataLines[] = 'onlyIfMissing true';
         }
 
@@ -1381,10 +1368,9 @@ class GaleResponse implements Responsable
      * Constructs array of SSE data lines for gale-invoke-method event including
      * component name, method name, and JSON-encoded arguments array.
      *
-     * @param string $componentName Component name (from x-component attribute)
-     * @param string $method Method name to invoke
-     * @param array<int, mixed> $args Arguments to pass to the method
-     *
+     * @param  string  $componentName  Component name (from x-component attribute)
+     * @param  string  $method  Method name to invoke
+     * @param  array<int, mixed>  $args  Arguments to pass to the method
      * @return array<int, string> Array of SSE data lines
      */
     protected function buildMethodInvocationEvent(string $componentName, string $method, array $args): array
@@ -1411,9 +1397,8 @@ class GaleResponse implements Responsable
      * element appended to document body. Supports custom attributes and auto-removal
      * after execution using Alpine's x-init directive.
      *
-     * @param string $script JavaScript code to execute
-     * @param array<string, mixed> $options Script configuration (attributes, autoRemove)
-     *
+     * @param  string  $script  JavaScript code to execute
+     * @param  array<string, mixed>  $options  Script configuration (attributes, autoRemove)
      * @return array<int, string> Array of SSE data lines
      */
     protected function buildScriptEvent(string $script, array $options): array
@@ -1425,7 +1410,7 @@ class GaleResponse implements Responsable
         $scriptTag = '<script';
 
         foreach ($attributes as $key => $value) {
-            $scriptTag .= ' ' . (string) $key . '="' . htmlspecialchars((string) $value, ENT_QUOTES) . '"';
+            $scriptTag .= ' '.(string) $key.'="'.htmlspecialchars((string) $value, ENT_QUOTES).'"';
         }
 
         if ($autoRemove) {
@@ -1433,7 +1418,7 @@ class GaleResponse implements Responsable
             $scriptTag .= ' x-init="$nextTick(() => $el.remove())"';
         }
 
-        $scriptTag .= '>' . $script . '</script>';
+        $scriptTag .= '>'.$script.'</script>';
 
         // Split script tag by newlines to properly format SSE data lines
         $dataLines = ['selector body', 'mode append'];
@@ -1451,19 +1436,18 @@ class GaleResponse implements Responsable
      * Constructs array of SSE data lines for removing DOM elements using patch mode 'remove'.
      * Supports View Transitions API for smooth removal animations.
      *
-     * @param array<string, mixed> $options Removal configuration (selector, useViewTransition)
-     *
+     * @param  array<string, mixed>  $options  Removal configuration (selector, useViewTransition)
      * @return array<int, string> Array of SSE data lines
      */
     protected function buildRemovalEvent(array $options): array
     {
         $dataLines = [
             /** @phpstan-ignore cast.string (mixed array value, safe to cast) */
-            'selector ' . (string) $options['selector'],
+            'selector '.(string) $options['selector'],
             'mode remove',
         ];
 
-        if (!empty($options['useViewTransition'])) {
+        if (! empty($options['useViewTransition'])) {
             $dataLines[] = 'useViewTransition true';
         }
 
@@ -1477,17 +1461,16 @@ class GaleResponse implements Responsable
      * it with provided data, then patches the result into the DOM. Only processes for Gale
      * requests to avoid unnecessary fragment extraction for standard requests.
      *
-     * @param string $view Blade view containing the fragment
-     * @param string $fragment Fragment name to extract and render
-     * @param array<string, mixed> $data Variables to pass to fragment
-     * @param array<string, mixed> $options DOM patching options (selector, mode, useViewTransition)
-     *
+     * @param  string  $view  Blade view containing the fragment
+     * @param  string  $fragment  Fragment name to extract and render
+     * @param  array<string, mixed>  $data  Variables to pass to fragment
+     * @param  array<string, mixed>  $options  DOM patching options (selector, mode, useViewTransition)
      * @return static Returns this instance for method chaining
      */
     protected function patchFragment(string $view, string $fragment, array $data = [], array $options = []): self
     {
         /** @phpstan-ignore method.notFound (isGale is a Request macro) */
-        if (!request()->isGale()) {
+        if (! request()->isGale()) {
             return $this;
         }
 
@@ -1502,14 +1485,13 @@ class GaleResponse implements Responsable
      * Processes array of fragment configurations, rendering and patching each fragment.
      * Enables updating multiple UI sections in a single response without full page reloads.
      *
-     * @param array<int, array{view: string, fragment: string, data?: array<string, mixed>, options?: array<string, mixed>}> $fragments Fragment configurations
-     *
+     * @param  array<int, array{view: string, fragment: string, data?: array<string, mixed>, options?: array<string, mixed>}>  $fragments  Fragment configurations
      * @return static Returns this instance for method chaining
      */
     protected function patchFragments(array $fragments): self
     {
         /** @phpstan-ignore method.notFound (isGale is a Request macro) */
-        if (!request()->isGale()) {
+        if (! request()->isGale()) {
             return $this;
         }
 
@@ -1532,10 +1514,9 @@ class GaleResponse implements Responsable
      * it into the DOM. Useful for embedding fragment content in other contexts or for
      * manual DOM manipulation.
      *
-     * @param string $view Blade view containing the fragment
-     * @param string $fragment Fragment name to extract and render
-     * @param array<string, mixed> $data Variables to pass to fragment
-     *
+     * @param  string  $view  Blade view containing the fragment
+     * @param  string  $fragment  Fragment name to extract and render
+     * @param  array<string, mixed>  $data  Variables to pass to fragment
      * @return string Rendered HTML content of the fragment
      */
     protected function renderFragment(string $view, string $fragment, array $data = []): string
@@ -1551,8 +1532,7 @@ class GaleResponse implements Responsable
      * objects, views, redirects, or closures that return these types. If not configured,
      * LogicException is thrown for non-Gale requests when toResponse() is called.
      *
-     * @param mixed $response Response value or closure returning response
-     *
+     * @param  mixed  $response  Response value or closure returning response
      * @return static Returns this instance for method chaining
      */
     public function web(mixed $response): self
@@ -1575,10 +1555,9 @@ class GaleResponse implements Responsable
      * callable that receives this instance and returns boolean. Supports optional
      * fallback callback for else branch.
      *
-     * @param mixed $condition Boolean value or callable returning boolean
-     * @param callable $callback Callback to execute if condition is truthy
-     * @param callable|null $fallback Optional callback to execute if condition is falsy
-     *
+     * @param  mixed  $condition  Boolean value or callable returning boolean
+     * @param  callable  $callback  Callback to execute if condition is truthy
+     * @param  callable|null  $fallback  Optional callback to execute if condition is falsy
      * @return static Returns this instance for method chaining
      */
     public function when($condition, callable $callback, ?callable $fallback = null): self
@@ -1601,15 +1580,14 @@ class GaleResponse implements Responsable
      * to when() with negated condition. Useful for clearer conditional logic in certain
      * scenarios.
      *
-     * @param mixed $condition Boolean value or callable returning boolean
-     * @param callable $callback Callback to execute if condition is falsy
-     * @param callable|null $fallback Optional callback to execute if condition is truthy
-     *
+     * @param  mixed  $condition  Boolean value or callable returning boolean
+     * @param  callable  $callback  Callback to execute if condition is falsy
+     * @param  callable|null  $fallback  Optional callback to execute if condition is truthy
      * @return static Returns this instance for method chaining
      */
     public function unless($condition, callable $callback, ?callable $fallback = null): self
     {
-        return $this->when(!$condition, $callback, $fallback);
+        return $this->when(! $condition, $callback, $fallback);
     }
 
     /**
@@ -1619,9 +1597,8 @@ class GaleResponse implements Responsable
      * detects Gale requests via Datastar-Request header and executes callback only
      * when present. Supports optional fallback for non-Gale requests.
      *
-     * @param callable $callback Callback to execute for Gale requests
-     * @param callable|null $fallback Optional callback for non-Gale requests
-     *
+     * @param  callable  $callback  Callback to execute for Gale requests
+     * @param  callable|null  $fallback  Optional callback for non-Gale requests
      * @return static Returns this instance for method chaining
      */
     public function whenGale(callable $callback, ?callable $fallback = null): self
@@ -1637,15 +1614,14 @@ class GaleResponse implements Responsable
      * Datastar-Request header. Useful for providing alternate behavior for traditional
      * full-page requests.
      *
-     * @param callable $callback Callback to execute for non-Gale requests
-     * @param callable|null $fallback Optional callback for Gale requests
-     *
+     * @param  callable  $callback  Callback to execute for non-Gale requests
+     * @param  callable|null  $fallback  Optional callback for Gale requests
      * @return static Returns this instance for method chaining
      */
     public function whenNotGale(callable $callback, ?callable $fallback = null): self
     {
         /** @phpstan-ignore method.notFound (isGale is a Request macro) */
-        return $this->when(!request()->isGale(), $callback, $fallback);
+        return $this->when(! request()->isGale(), $callback, $fallback);
     }
 
     /**
@@ -1655,8 +1631,7 @@ class GaleResponse implements Responsable
      * then sends update event to remove state from client. Supports single state
      * key or array of state keys.
      *
-     * @param string|array<int, string> $state State key or array of state keys to delete
-     *
+     * @param  string|array<int, string>  $state  State key or array of state keys to delete
      * @return static Returns this instance for method chaining
      */
     protected function forgetState(string|array $state): self
@@ -1675,8 +1650,7 @@ class GaleResponse implements Responsable
      * reset to an empty array instead of null, as it should always remain an array for
      * the x-message directive to function correctly.
      *
-     * @param string|array<int, string> $state State key or array of state keys
-     *
+     * @param  string|array<int, string>  $state  State key or array of state keys
      * @return array<string, null|array<empty, empty>> Deletion array with state keys as keys, null or empty array as values
      */
     private function parseStateForDeletion(string|array $state): array
@@ -1700,8 +1674,7 @@ class GaleResponse implements Responsable
      * into flat array of state key strings. For associative arrays, extracts keys as
      * state keys. For indexed arrays, uses values as state keys.
      *
-     * @param string|array<int|string, mixed> $state State key(s) in various formats
-     *
+     * @param  string|array<int|string, mixed>  $state  State key(s) in various formats
      * @return array<int, string> Normalized array of state key strings
      */
     private function parseStateKeys(string|array $state): array
@@ -1711,11 +1684,11 @@ class GaleResponse implements Responsable
         }
 
         if (array_keys($state) !== range(0, count($state) - 1)) {
-            return array_map(fn($key) => (string) $key, array_keys($state));
+            return array_map(fn ($key) => (string) $key, array_keys($state));
         }
 
         /** @phpstan-ignore cast.string (State values are converted to strings for consistency) */
-        return array_map(fn($value) => (string) $value, array_values($state));
+        return array_map(fn ($value) => (string) $value, array_values($state));
     }
 
     /**
@@ -1725,10 +1698,9 @@ class GaleResponse implements Responsable
      * header. Supports filtering by navigate key for targeted updates (e.g., sidebar vs
      * main content). When first parameter is callable, treats request as "any navigate".
      *
-     * @param string|array<int, string>|callable|null $key Navigate key filter, array of keys, or callback for any navigate
-     * @param callable|null $callback Callback to execute when navigate request matches
-     * @param callable|null $fallback Optional callback for non-matching requests
-     *
+     * @param  string|array<int, string>|callable|null  $key  Navigate key filter, array of keys, or callback for any navigate
+     * @param  callable|null  $callback  Callback to execute when navigate request matches
+     * @param  callable|null  $fallback  Optional callback for non-matching requests
      * @return static Returns this instance for method chaining
      */
     public function whenGaleNavigate(string|array|callable|null $key = null, ?callable $callback = null, ?callable $fallback = null): self
@@ -1744,7 +1716,7 @@ class GaleResponse implements Responsable
 
         if ($isNavigateRequest && $callback) {
             $callback($this);
-        } elseif (!$isNavigateRequest && $fallback) {
+        } elseif (! $isNavigateRequest && $fallback) {
             $fallback($this);
         }
 
@@ -1763,7 +1735,7 @@ class GaleResponse implements Responsable
     public function reload(): self
     {
         /** @phpstan-ignore method.notFound (isGale is a Request macro) */
-        if (!request()->isGale()) {
+        if (! request()->isGale()) {
             return $this;
         }
 
@@ -1778,14 +1750,14 @@ class GaleResponse implements Responsable
      *
      * REPLACES THE EXISTING navigate() METHOD WITH EXPLICIT BEHAVIOR
      *
-     * @param string|array<string, mixed> $url URL string or array of query parameters
-     * @param string $key Navigation key for Datastar routing
-     * @param array<string, mixed> $options Navigation options
+     * @param  string|array<string, mixed>  $url  URL string or array of query parameters
+     * @param  string  $key  Navigation key for Datastar routing
+     * @param  array<string, mixed>  $options  Navigation options
      */
     public function navigate(string|array $url, string $key = 'true', array $options = []): self
     {
         /** @phpstan-ignore method.notFound (isGale is a Request macro) */
-        if (!request()->isGale()) {
+        if (! request()->isGale()) {
             return $this;
         }
 
@@ -1814,10 +1786,10 @@ class GaleResponse implements Responsable
     /**
      * Navigate with explicit merge behavior (RECOMMENDED)
      *
-     * @param string|array<string, mixed> $url URL or query array
-     * @param string $key Navigation key
-     * @param bool $merge Whether to merge with current query parameters
-     * @param array<string, mixed> $options Additional options (only, except, replace)
+     * @param  string|array<string, mixed>  $url  URL or query array
+     * @param  string  $key  Navigation key
+     * @param  bool  $merge  Whether to merge with current query parameters
+     * @param  array<string, mixed>  $options  Additional options (only, except, replace)
      */
     public function navigateWith(string|array $url, string $key = 'true', bool $merge = false, array $options = []): self
     {
@@ -1827,9 +1799,9 @@ class GaleResponse implements Responsable
     /**
      * Navigate and merge with current parameters (preserves context)
      *
-     * @param string|array<string, mixed> $url URL or query array
-     * @param string $key Navigation key
-     * @param array<string, mixed> $options Additional options
+     * @param  string|array<string, mixed>  $url  URL or query array
+     * @param  string  $key  Navigation key
+     * @param  array<string, mixed>  $options  Additional options
      */
     public function navigateMerge(string|array $url, string $key = 'true', array $options = []): self
     {
@@ -1839,9 +1811,9 @@ class GaleResponse implements Responsable
     /**
      * Navigate with clean slate (no parameter merging)
      *
-     * @param string|array<string, mixed> $url URL or query array
-     * @param string $key Navigation key
-     * @param array<string, mixed> $options Additional options
+     * @param  string|array<string, mixed>  $url  URL or query array
+     * @param  string  $key  Navigation key
+     * @param  array<string, mixed>  $options  Additional options
      */
     public function navigateClean(string|array $url, string $key = 'true', array $options = []): self
     {
@@ -1851,9 +1823,9 @@ class GaleResponse implements Responsable
     /**
      * Navigate preserving only specific parameters
      *
-     * @param string|array<string, mixed> $url URL or query array
-     * @param array<int, string> $only Parameters to preserve
-     * @param string $key Navigation key
+     * @param  string|array<string, mixed>  $url  URL or query array
+     * @param  array<int, string>  $only  Parameters to preserve
+     * @param  string  $key  Navigation key
      */
     public function navigateOnly(string|array $url, array $only, string $key = 'true'): self
     {
@@ -1863,9 +1835,9 @@ class GaleResponse implements Responsable
     /**
      * Navigate preserving all except specific parameters
      *
-     * @param string|array<string, mixed> $url URL or query array
-     * @param array<int, string> $except Parameters to exclude
-     * @param string $key Navigation key
+     * @param  string|array<string, mixed>  $url  URL or query array
+     * @param  array<int, string>  $except  Parameters to exclude
+     * @param  string  $key  Navigation key
      */
     public function navigateExcept(string|array $url, array $except, string $key = 'true'): self
     {
@@ -1875,9 +1847,9 @@ class GaleResponse implements Responsable
     /**
      * Navigate using replaceState instead of pushState
      *
-     * @param string|array<string, mixed> $url URL or query array
-     * @param string $key Navigation key
-     * @param array<string, mixed> $options Additional options
+     * @param  string|array<string, mixed>  $url  URL or query array
+     * @param  string  $key  Navigation key
+     * @param  array<string, mixed>  $options  Additional options
      */
     public function navigateReplace(string|array $url, string $key = 'true', array $options = []): self
     {
@@ -1891,9 +1863,9 @@ class GaleResponse implements Responsable
     /**
      * Navigate to current page with new query parameters (maintains path)
      *
-     * @param array<string, mixed> $queries Query parameters to set
-     * @param string $key Navigation key
-     * @param bool $merge Whether to merge with existing parameters
+     * @param  array<string, mixed>  $queries  Query parameters to set
+     * @param  string  $key  Navigation key
+     * @param  bool  $merge  Whether to merge with existing parameters
      */
     public function updateQueries(array $queries, string $key = 'filters', bool $merge = true): self
     {
@@ -1903,8 +1875,8 @@ class GaleResponse implements Responsable
     /**
      * Clear specific query parameters
      *
-     * @param array<int, string> $paramNames Parameters to clear
-     * @param string $key Navigation key
+     * @param  array<int, string>  $paramNames  Parameters to clear
+     * @param  string  $key  Navigation key
      */
     public function clearQueries(array $paramNames, string $key = 'clear'): self
     {
@@ -1920,8 +1892,7 @@ class GaleResponse implements Responsable
     /**
      * Build query string from associative array
      *
-     * @param array<string, mixed> $queries Query parameters
-     *
+     * @param  array<string, mixed>  $queries  Query parameters
      * @return string Query string (without ?)
      */
     private function buildQueryString(array $queries): string
@@ -1939,13 +1910,13 @@ class GaleResponse implements Responsable
                 foreach ($value as $item) {
                     if ($item !== null && $item !== '') {
                         /** @phpstan-ignore cast.string (Safe cast for URL encoding) */
-                        $params[] = urlencode((string) $key) . '[]=' . urlencode((string) $item);
+                        $params[] = urlencode((string) $key).'[]='.urlencode((string) $item);
                     }
                 }
             } else {
                 // Handle scalar values
                 /** @phpstan-ignore cast.string (Safe cast for URL encoding) */
-                $params[] = urlencode((string) $key) . '=' . urlencode((string) $value);
+                $params[] = urlencode((string) $key).'='.urlencode((string) $value);
             }
         }
 
@@ -1955,10 +1926,9 @@ class GaleResponse implements Responsable
     /**
      * Generate enhanced navigation script using Datastar action
      *
-     * @param string $url Target URL
-     * @param string $key Navigation key
-     * @param array<string, mixed> $options Navigation options
-     *
+     * @param  string  $url  Target URL
+     * @param  string  $key  Navigation key
+     * @param  array<string, mixed>  $options  Navigation options
      * @return string JavaScript code
      */
     private function generateEnhancedNavigateScript(string $url, string $key, array $options): string
@@ -1970,15 +1940,15 @@ class GaleResponse implements Responsable
             $frontendOptions['merge'] = (bool) $options['merge'];
         }
 
-        if (!empty($options['only'])) {
+        if (! empty($options['only'])) {
             $frontendOptions['only'] = $options['only'];
         }
 
-        if (!empty($options['except'])) {
+        if (! empty($options['except'])) {
             $frontendOptions['except'] = $options['except'];
         }
 
-        if (!empty($options['replace'])) {
+        if (! empty($options['replace'])) {
             $frontendOptions['replace'] = true;
         }
 
@@ -2026,7 +1996,7 @@ class GaleResponse implements Responsable
      * Checks URL format validity and enforces same-origin policy for absolute URLs
      * to prevent open redirect vulnerabilities. Relative paths are allowed.
      *
-     * @param string $url URL to validate
+     * @param  string  $url  URL to validate
      *
      * @throws \InvalidArgumentException When URL format invalid or cross-origin URL detected
      */
@@ -2038,7 +2008,7 @@ class GaleResponse implements Responsable
         }
 
         // Validate absolute URL format
-        if (!filter_var($url, FILTER_VALIDATE_URL)) {
+        if (! filter_var($url, FILTER_VALIDATE_URL)) {
             throw new \InvalidArgumentException("Invalid URL format: {$url}");
         }
 
@@ -2051,7 +2021,7 @@ class GaleResponse implements Responsable
      */
     private function isRelativePath(string $url): bool
     {
-        return str_starts_with($url, '/') || !str_contains($url, '://');
+        return str_starts_with($url, '/') || ! str_contains($url, '://');
     }
 
     /**
