@@ -1050,6 +1050,7 @@ class GaleResponse implements Responsable
                 if (session_status() === PHP_SESSION_ACTIVE) {
                     session_write_close();
                 }
+
                 $this->executeStreamingModeWithCallback($streamCallback);
             });
 
@@ -1161,27 +1162,8 @@ class GaleResponse implements Responsable
     protected function sendEventImmediately(string $eventType, array $dataLines): void
     {
         $output = $this->formatEvent($eventType, $dataLines);
-
-        // Get current buffer level so we can bypass ALL buffers
-        // This prevents the stream() method's output buffer from capturing SSE events
-        $bufferLevel = ob_get_level();
-        $bufferContents = [];
-
-        // Save and end all output buffers temporarily
-        while (ob_get_level() > 0) {
-            $bufferContents[] = ob_get_contents();
-            ob_end_clean();
-        }
-
-        // Output the SSE event directly (not captured by any buffer)
         echo $output;
-        flush();
-
-        // Restart the buffers with their original content
-        for ($i = count($bufferContents) - 1; $i >= 0; $i--) {
-            ob_start();
-            echo $bufferContents[$i];
-        }
+        $this->flushOutput();
     }
 
     /**
@@ -1206,7 +1188,9 @@ class GaleResponse implements Responsable
      */
     protected function flushOutput(): void
     {
-        if (ob_get_contents()) {
+        // Flush ALL output buffers for progressive streaming
+        // This is critical - must flush all levels, not just one
+        while (ob_get_level() > 0 && ob_get_contents() !== false) {
             ob_end_flush();
         }
         flush();
