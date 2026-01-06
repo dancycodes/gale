@@ -237,7 +237,7 @@ class PendingRouteAction
      * Maps common Laravel resource controller method names to appropriate HTTP verbs
      * following RESTful conventions. Index, create, show, edit use GET; store uses POST;
      * update uses PUT and PATCH; destroy and delete use DELETE. All other methods default
-     * to GET.
+     * to POST (matching $action magic default behavior).
      *
      * @return array<int, string> Array of HTTP method verbs
      */
@@ -248,7 +248,7 @@ class PendingRouteAction
             'store' => ['POST'],
             'update' => ['PUT', 'PATCH'],
             'destroy', 'delete' => ['DELETE'],
-            default => ['GET'],
+            default => ['POST'],
         };
     }
 

@@ -100,7 +100,7 @@ Route::post('/increment', function () {
     <body>
         <div x-data="{ count: 0 }" x-sync>
             <span x-text="count"></span>
-            <button @click="$postx('/increment')">+</button>
+            <button @click="$action('/increment')">+</button>
         </div>
     </body>
 </html>
@@ -203,7 +203,7 @@ php artisan vendor:publish --tag=gale-config
 │  │   State: { count: 0, user: {...} }                     │ │
 │  └────────────────────────────────────────────────────────┘ │
 │                           │                                  │
-│                           │ $postx('/increment')             │
+│                           │ $action('/increment')            │
 │                           ▼                                  │
 │  ┌────────────────────────────────────────────────────────┐ │
 │  │ HTTP Request                                           │ │
@@ -258,14 +258,14 @@ All Alpine Gale features require an Alpine.js context:
 ```html
 <!-- Works: Inside x-data -->
 <div x-data="{ count: 0 }">
-    <button @click="$postx('/increment')">+</button>
+    <button @click="$action('/increment')">+</button>
 </div>
 
 <!-- Works: x-init provides context -->
-<div x-init="$get('/load')">Loading...</div>
+<div x-init="$action.get('/load')">Loading...</div>
 
 <!-- Fails: No Alpine context -->
-<button @click="$postx('/increment')">Broken</button>
+<button @click="$action('/increment')">Broken</button>
 ```
 
 > 📖 Learn more about the [Architecture & Concepts](https://dancycodes.com/gale/docs/concepts/how-it-works).
@@ -979,34 +979,45 @@ All frontend features require an Alpine.js context (`x-data` or `x-init`).
 
 ### HTTP Magics
 
-#### Basic HTTP Methods
+The `$action` magic handles all HTTP requests to your Gale backend. It defaults to **POST with automatic CSRF injection**—the most common pattern for Gale actions.
+
+#### Basic Usage
 
 ```html
-<div x-data="{ count: 0 }">
-    <button @click="$get('/api/data')">GET</button>
-    <button @click="$post('/api/save')">POST</button>
-    <button @click="$patch('/api/update')">PATCH</button>
-    <button @click="$put('/api/replace')">PUT</button>
-    <button @click="$delete('/api/remove')">DELETE</button>
+<div x-data="{ count: 0 }" x-sync>
+    <!-- Default: POST with CSRF (most common) -->
+    <button @click="$action('/increment')">+1</button>
+
+    <!-- Method shorthands -->
+    <button @click="$action.get('/api/data')">GET</button>
+    <button @click="$action.post('/api/save')">POST</button>
+    <button @click="$action.put('/api/replace')">PUT</button>
+    <button @click="$action.patch('/api/update')">PATCH</button>
+    <button @click="$action.delete('/api/remove')">DELETE</button>
 </div>
 ```
 
-#### CSRF-Protected Variants
+#### CSRF Protection
 
-For Laravel's CSRF protection, use the `x` suffix:
+CSRF tokens are **automatically injected** for all non-GET methods:
+- `$action()` → POST with CSRF
+- `$action.post()` → POST with CSRF
+- `$action.put()` → PUT with CSRF
+- `$action.patch()` → PATCH with CSRF
+- `$action.delete()` → DELETE with CSRF
+- `$action.get()` → GET (no CSRF needed)
+
+You can also specify the method via options:
 
 ```html
-<button @click="$postx('/save')">POST with CSRF</button>
-<button @click="$patchx('/update')">PATCH with CSRF</button>
-<button @click="$putx('/replace')">PUT with CSRF</button>
-<button @click="$deletex('/remove')">DELETE with CSRF</button>
+<button @click="$action('/search', { method: 'get' })">Search</button>
 ```
 
 #### Request Options
 
 ```html
 <button
-    @click="$postx('/save', {
+    @click="$action('/save', {
     include: ['user', 'settings'],
     exclude: ['tempData'],
     headers: { 'X-Custom': 'value' },
@@ -1022,17 +1033,18 @@ For Laravel's CSRF protection, use the `x` suffix:
 </button>
 ```
 
-| Option                | Type     | Default | Description                    |
-| --------------------- | -------- | ------- | ------------------------------ |
-| `include`             | array    | `null`  | Only send these state keys     |
-| `exclude`             | array    | `null`  | Don't send these state keys    |
-| `headers`             | object   | `{}`    | Additional request headers     |
-| `retryInterval`       | number   | `1000`  | Initial retry delay (ms)       |
-| `retryScaler`         | number   | `2`     | Exponential backoff multiplier |
-| `retryMaxWaitMs`      | number   | `30000` | Maximum retry delay (ms)       |
-| `retryMaxCount`       | number   | `10`    | Maximum retry attempts         |
-| `requestCancellation` | bool     | `false` | Cancel previous request        |
-| `onProgress`          | function | `null`  | Upload progress callback       |
+| Option                | Type     | Default  | Description                    |
+| --------------------- | -------- | -------- | ------------------------------ |
+| `method`              | string   | `'POST'` | HTTP method (GET, POST, etc.)  |
+| `include`             | array    | `null`   | Only send these state keys     |
+| `exclude`             | array    | `null`   | Don't send these state keys    |
+| `headers`             | object   | `{}`     | Additional request headers     |
+| `retryInterval`       | number   | `1000`   | Initial retry delay (ms)       |
+| `retryScaler`         | number   | `2`      | Exponential backoff multiplier |
+| `retryMaxWaitMs`      | number   | `30000`  | Maximum retry delay (ms)       |
+| `retryMaxCount`       | number   | `10`     | Maximum retry attempts         |
+| `requestCancellation` | bool     | `false`  | Cancel previous request        |
+| `onProgress`          | function | `null`   | Upload progress callback       |
 
 ### State Synchronization (x-sync)
 
@@ -1074,13 +1086,13 @@ The `include` and `exclude` options on HTTP magics work together with `x-sync`:
 ```html
 <!-- x-sync defines base, include adds more -->
 <div x-data="{ a: 1, b: 2, c: 3 }" x-sync="['a']">
-  <button @click="$postx('/save', { include: ['c'] })">Save</button>
+  <button @click="$action('/save', { include: ['c'] })">Save</button>
   <!-- Sends: { a: 1, c: 3 } -->
 </div>
 
 <!-- exclude always removes -->
 <div x-data="{ a: 1, b: 2, c: 3 }" x-sync>
-  <button @click="$postx('/save', { exclude: ['b'] })">Save</button>
+  <button @click="$action('/save', { exclude: ['b'] })">Save</button>
   <!-- Sends: { a: 1, c: 3 } -->
 </div>
 ```
@@ -1106,15 +1118,15 @@ Form fields are handled separately from `x-sync`:
 <form>
   <input name="email" value="form@example.com">
   <div x-data="{ email: 'alpine@example.com' }" x-sync="['email']">
-    <button @click="$postx('/save')">Save</button>
+    <button @click="$action('/save')">Save</button>
     <!-- Sends: { email: 'alpine@example.com' } (Alpine overrides form) -->
   </div>
 </form>
 ```
 
-### CSRF Protection
+### CSRF Configuration
 
-The `@gale` directive adds `<meta name="csrf-token">`. The `x` variants (`$postx`, etc.) read this token automatically.
+The `@gale` directive adds `<meta name="csrf-token">`. The `$action` magic reads this token automatically for all non-GET requests.
 
 #### Configuration
 
@@ -1177,7 +1189,7 @@ The `$gale` magic provides global connection state:
 The `$fetching()` magic function tracks per-element loading state:
 
 ```html
-<button @click="$postx('/save')" :disabled="$fetching()">
+<button @click="$action('/save')" :disabled="$fetching()">
     <span x-show="!$fetching()">Save</span>
     <span x-show="$fetching()">Saving...</span>
 </button>
@@ -1193,7 +1205,7 @@ Creates a boolean state variable tracking requests within the element tree:
 
 ```html
 <div x-data="{ saving: false }" x-indicator="saving">
-    <button @click="$postx('/save')" :disabled="saving">
+    <button @click="$action('/save')" :disabled="saving">
         <span x-show="!saving">Save</span>
         <span x-show="saving">Saving...</span>
     </button>
@@ -1615,7 +1627,7 @@ Forms using `x-name` work seamlessly with Gale's HTTP magics:
     <input x-name="firstName" type="text" placeholder="First name">
     <input x-name="lastName" type="text" placeholder="Last name">
 
-    <button @click="$postx('/api/greet')">Submit</button>
+    <button @click="$action('/api/greet')">Submit</button>
 
     <p x-text="response"></p>
 </div>
@@ -1641,7 +1653,7 @@ Field names from `x-name` map directly to Laravel validation error keys:
     <input x-name="email" type="email">
     <span x-message="email" class="text-red-500"></span>
 
-    <button @click="$postx('/subscribe')">Subscribe</button>
+    <button @click="$action('/subscribe')">Subscribe</button>
 </div>
 ```
 
@@ -1669,7 +1681,7 @@ Route::post('/subscribe', function (Request $request) {
         <img :src="$filePreview('avatar')" />
     </div>
 
-    <button @click="$postx('/upload')">Upload</button>
+    <button @click="$action('/upload')">Upload</button>
 </div>
 ```
 
@@ -1748,7 +1760,7 @@ Display messages from state:
 
     <div x-message="_success" class="text-green-500"></div>
 
-    <button @click="$postx('/login')">Login</button>
+    <button @click="$action('/login')">Login</button>
 </div>
 ```
 
@@ -1782,7 +1794,7 @@ Use template literals to display validation errors for array items in loops:
         </div>
     </template>
 
-    <button @click="$postx('/validate-items')">Validate</button>
+    <button @click="$action('/validate-items')">Validate</button>
 </div>
 ```
 
@@ -1863,7 +1875,7 @@ Runs Alpine expressions at configurable intervals. Like `x-init`, but repeating.
 </div>
 
 <!-- HTTP polling using $get -->
-<div x-data="{ status: '' }" x-interval.5s="$get('/api/status')">
+<div x-data="{ status: '' }" x-interval.5s="$action.get('/api/status')">
     <span x-text="status"></span>
 </div>
 
@@ -1871,17 +1883,17 @@ Runs Alpine expressions at configurable intervals. Like `x-init`, but repeating.
 <div x-data="{ tick: 0 }" x-interval.2s="tick++; checkStatus()">...</div>
 
 <!-- Fast interval (500ms) -->
-<div x-interval.500ms="$get('/api/live')">...</div>
+<div x-interval.500ms="$action.get('/api/live')">...</div>
 ```
 
 #### Modifiers
 
 ```html
 <!-- Only run when tab is visible -->
-<div x-interval.visible.5s="$get('/api/status')">...</div>
+<div x-interval.visible.5s="$action.get('/api/status')">...</div>
 
-<!-- CSRF-protected requests (use $postx/$getx) -->
-<div x-interval.2s="$postx('/api/protected')">...</div>
+<!-- CSRF-protected requests -->
+<div x-interval.2s="$action('/api/protected')">...</div>
 
 <!-- Stop on condition -->
 <div x-data="{ done: false, progress: 0 }"
@@ -1896,7 +1908,7 @@ Runs Alpine expressions at configurable intervals. Like `x-init`, but repeating.
 | `.{time}`  | Interval duration (e.g., `.5s`, `.500ms`) |
 | `.visible` | Only run when tab visible                |
 
-**Note:** For CSRF-protected requests, use `$postx()` or other CSRF magics within the expression.
+**Note:** For state-mutating requests, use `$action()` which automatically includes CSRF protection.
 
 ### Confirmation Dialogs
 
@@ -1904,11 +1916,11 @@ Runs Alpine expressions at configurable intervals. Like `x-init`, but repeating.
 
 ```html
 <!-- Default message -->
-<button @click="$deletex('/item/1')" x-confirm>Delete</button>
+<button @click="$action.delete('/item/1')" x-confirm>Delete</button>
 
 <!-- Custom message -->
 <button
-    @click="$deletex('/item/1')"
+    @click="$action.delete('/item/1')"
     x-confirm="Are you sure you want to delete this item?"
 >
     Delete
@@ -1916,7 +1928,7 @@ Runs Alpine expressions at configurable intervals. Like `x-init`, but repeating.
 
 <!-- Dynamic message -->
 <button
-    @click="$deletex('/user/' + userId)"
+    @click="$action.delete('/user/' + userId)"
     x-confirm="'Delete ' + userName + '?'"
 >
     Delete
@@ -2033,7 +2045,7 @@ Use the `x-sync` directive for component-level control:
 ```html
 <!-- Recommended: Declare synced properties at component level -->
 <div x-data="{ user: {...}, temp: null }" x-sync="['user']">
-  <button @click="$postx('/save')">Save User</button>
+  <button @click="$action('/save')">Save User</button>
 </div>
 ```
 
@@ -2041,7 +2053,7 @@ Use request options for per-request overrides:
 
 ```html
 <button
-    @click="$postx('/save', {
+    @click="$action('/save', {
     include: ['additionalKey'],
     exclude: ['sensitiveKey']
 })"
@@ -2054,7 +2066,7 @@ Use request options for per-request overrides:
 
 ```html
 <button
-    @click="$postx('/save', {
+    @click="$action('/save', {
     includeComponents: ['cart', 'wishlist'],
     includeComponentsByTag: ['forms']
 })"
@@ -2255,18 +2267,15 @@ return gale()
 
 ### Frontend Magics Reference
 
-| Magic                            | Description                        |
-| -------------------------------- | ---------------------------------- |
-| `$get(url, options?)`            | GET request                        |
-| `$post(url, options?)`           | POST request                       |
-| `$postx(url, options?)`          | POST with CSRF                     |
-| `$patch(url, options?)`          | PATCH request                      |
-| `$patchx(url, options?)`         | PATCH with CSRF                    |
-| `$put(url, options?)`            | PUT request                        |
-| `$putx(url, options?)`           | PUT with CSRF                      |
-| `$delete(url, options?)`         | DELETE request                     |
-| `$deletex(url, options?)`        | DELETE with CSRF                   |
-| `$gale`                          | Global connection state            |
+| Magic                            | Description                             |
+| -------------------------------- | --------------------------------------- |
+| `$action(url, options?)`         | POST with auto CSRF (default)           |
+| `$action.get(url, options?)`     | GET request                             |
+| `$action.post(url, options?)`    | POST with auto CSRF                     |
+| `$action.put(url, options?)`     | PUT with auto CSRF                      |
+| `$action.patch(url, options?)`   | PATCH with auto CSRF                    |
+| `$action.delete(url, options?)`  | DELETE with auto CSRF                   |
+| `$gale`                          | Global connection state                 |
 | `$fetching()`                    | Element loading state (function)   |
 | `$navigate(url, options?)`       | Programmatic navigation            |
 | `$components`                    | Component registry API             |
@@ -2391,7 +2400,7 @@ If you see this error in the console:
 Detected multiple instances of Alpine running
 ```
 
-Or Alpine magics like `$wire` or `$postx` are undefined, you have two versions of Alpine running. **Gale bundles Alpine.js**, so you must remove any other Alpine installation:
+Or Alpine magics like `$wire` or `$action` are undefined, you have two versions of Alpine running. **Gale bundles Alpine.js**, so you must remove any other Alpine installation:
 
 **Remove CDN script:**
 ```html
@@ -2415,7 +2424,7 @@ Then use `@gale` — it provides Alpine.js, Morph, and Gale together.
 | ---------------------- | ------------------------- | ---------------------------------- |
 | "Multiple instances"   | Duplicate Alpine.js       | Remove existing Alpine (see above) |
 | "No Alpine context"    | Magic used outside x-data | Wrap in x-data element             |
-| CSRF token mismatch    | Token not sent            | Use `$postx` instead of `$post`    |
+| CSRF token mismatch    | Token not sent            | Use `$action()` (auto CSRF)        |
 | State not updating     | Wrong key                 | Check Alpine x-data property names |
 | 419 error              | Session expired           | Refresh page or use meta token     |
 | Navigation not working | Missing x-navigate        | Add directive to link/form         |
