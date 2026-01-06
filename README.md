@@ -41,6 +41,7 @@ This README documents both:
     -   [Route Discovery](#route-discovery)
 -   [Frontend: Alpine Gale](#frontend-alpine-gale)
     -   [HTTP Magics](#http-magics)
+    -   [State Synchronization (x-sync)](#state-synchronization-x-sync)
     -   [CSRF Protection](#csrf-protection)
     -   [Global State ($gale)](#global-state-gale)
     -   [Element State ($fetching)](#element-state-fetching)
@@ -97,7 +98,7 @@ Route::post('/increment', function () {
         @gale
     </head>
     <body>
-        <div x-data="{ count: 0 }">
+        <div x-data="{ count: 0 }" x-sync>
             <span x-text="count"></span>
             <button @click="$postx('/increment')">+</button>
         </div>
@@ -106,6 +107,8 @@ Route::post('/increment', function () {
 ```
 
 Click the button. The count updates via SSE. No page reload, no JavaScript written.
+
+> **Note:** The `x-sync` directive tells Gale to include all Alpine state in requests. See [State Synchronization](#state-synchronization-x-sync) for details.
 
 > 💡 See the [Quickstart Guide](https://dancycodes.com/gale/docs/quickstart) for a step-by-step tutorial.
 
@@ -1031,6 +1034,84 @@ For Laravel's CSRF protection, use the `x` suffix:
 | `requestCancellation` | bool     | `false` | Cancel previous request        |
 | `onProgress`          | function | `null`  | Upload progress callback       |
 
+### State Synchronization (x-sync)
+
+The `x-sync` directive controls which Alpine state properties are sent to the server with HTTP requests.
+
+#### Basic Usage
+
+```html
+<!-- Send everything (empty = wildcard) -->
+<div x-data="{ name: '', email: '', open: false }" x-sync>
+
+<!-- Send specific keys only -->
+<div x-data="{ name: '', email: '', open: false }" x-sync="['name', 'email']">
+
+<!-- String syntax shorthand -->
+<div x-data="{ name: '', email: '' }" x-sync="name, email">
+
+<!-- Explicit wildcard (same as empty) -->
+<div x-data="{ name: '', email: '' }" x-sync="*">
+
+<!-- No x-sync = send nothing automatically -->
+<div x-data="{ name: '', temp: null }">
+```
+
+#### Behavior
+
+| x-sync Value | Result |
+|--------------|--------|
+| `x-sync` (empty) | Send all state (wildcard) |
+| `x-sync="*"` | Send all state (explicit wildcard) |
+| `x-sync="['a','b']"` | Send only 'a' and 'b' |
+| `x-sync="a, b"` | Send only 'a' and 'b' (string syntax) |
+| No directive | Send nothing (use `include` option if needed) |
+
+#### Interaction with Request Options
+
+The `include` and `exclude` options on HTTP magics work together with `x-sync`:
+
+```html
+<!-- x-sync defines base, include adds more -->
+<div x-data="{ a: 1, b: 2, c: 3 }" x-sync="['a']">
+  <button @click="$postx('/save', { include: ['c'] })">Save</button>
+  <!-- Sends: { a: 1, c: 3 } -->
+</div>
+
+<!-- exclude always removes -->
+<div x-data="{ a: 1, b: 2, c: 3 }" x-sync>
+  <button @click="$postx('/save', { exclude: ['b'] })">Save</button>
+  <!-- Sends: { a: 1, c: 3 } -->
+</div>
+```
+
+| x-sync | request include | request exclude | Result |
+|--------|-----------------|-----------------|--------|
+| (empty) | - | - | `{all state}` (wildcard) |
+| `['a','b']` | - | - | `{a, b}` |
+| `['a','b']` | `['c']` | - | `{a, b, c}` (union) |
+| `['a','b']` | - | `['b']` | `{a}` |
+| `*` or (empty) | `['a','b']` | - | `{a, b}` (include restricts wildcard) |
+| (none) | - | - | `{}` (nothing) |
+| (none) | `['name']` | - | `{name}` |
+
+#### Form Fields
+
+Form fields are handled separately from `x-sync`:
+- Form fields with `name` attribute are always included by default
+- Use `includeFormFields: false` to exclude form fields
+- Alpine state overrides form fields on key conflicts
+
+```html
+<form>
+  <input name="email" value="form@example.com">
+  <div x-data="{ email: 'alpine@example.com' }" x-sync="['email']">
+    <button @click="$postx('/save')">Save</button>
+    <!-- Sends: { email: 'alpine@example.com' } (Alpine overrides form) -->
+  </div>
+</form>
+```
+
 ### CSRF Protection
 
 The `@gale` directive adds `<meta name="csrf-token">`. The `x` variants (`$postx`, etc.) read this token automatically.
@@ -1927,16 +2008,19 @@ data: args [10,20]
 
 ### State Serialization
 
-When making requests, Alpine Gale serializes the component's `x-data`:
+When making requests, Alpine Gale serializes the component's `x-data` based on the `x-sync` directive.
 
 #### What Gets Serialized
 
--   All enumerable properties on the Alpine data object
+-   Properties declared in `x-sync` directive (or all properties if `x-sync` is empty/wildcard)
+-   If no `x-sync`: only properties specified in `include` option
+-   Form fields with `name` attribute (unless `includeFormFields: false`)
 -   Nested objects (recursively)
 -   Arrays
 
 #### What Doesn't Get Serialized
 
+-   Properties not declared in `x-sync` (unless in `include` option)
 -   Functions
 -   DOM elements
 -   Circular references (skipped)
@@ -1944,11 +2028,22 @@ When making requests, Alpine Gale serializes the component's `x-data`:
 
 #### Controlling Serialization
 
+Use the `x-sync` directive for component-level control:
+
+```html
+<!-- Recommended: Declare synced properties at component level -->
+<div x-data="{ user: {...}, temp: null }" x-sync="['user']">
+  <button @click="$postx('/save')">Save User</button>
+</div>
+```
+
+Use request options for per-request overrides:
+
 ```html
 <button
     @click="$postx('/save', {
-    include: ['user', 'settings'],
-    exclude: ['cache', 'temp']
+    include: ['additionalKey'],
+    exclude: ['sensitiveKey']
 })"
 >
     Save
@@ -2187,35 +2282,38 @@ return gale()
 
 ### Frontend Directives Reference
 
-| Directive            | Description              |
-| -------------------- | ------------------------ |
-| `x-navigate`         | Enable SPA navigation    |
-| `x-navigate-skip`    | Skip navigation handling |
-| `x-component="name"` | Register named component |
-| `x-name="field"`     | Form binding with state  |
-| `x-files`            | File input binding       |
-| `x-message="key"`    | Display message          |
-| `x-loading`          | Loading state display    |
-| `x-indicator="var"`  | Create loading variable  |
-| `x-poll="url"`       | Auto-polling             |
-| `x-poll-stop="expr"` | Stop polling condition   |
-| `x-confirm`          | Confirmation dialog      |
+| Directive            | Description                           |
+| -------------------- | ------------------------------------- |
+| `x-sync`             | Sync all state to server (wildcard)   |
+| `x-sync="['a','b']"` | Sync specific state keys              |
+| `x-navigate`         | Enable SPA navigation                 |
+| `x-navigate-skip`    | Skip navigation handling              |
+| `x-component="name"` | Register named component              |
+| `x-name="field"`     | Form binding with state               |
+| `x-files`            | File input binding                    |
+| `x-message="key"`    | Display message                       |
+| `x-loading`          | Loading state display                 |
+| `x-indicator="var"`  | Create loading variable               |
+| `x-poll="url"`       | Auto-polling                          |
+| `x-poll-stop="expr"` | Stop polling condition                |
+| `x-confirm`          | Confirmation dialog                   |
 
 ### Request Options Reference
 
-| Option                   | Type     | Default | Description              |
-| ------------------------ | -------- | ------- | ------------------------ |
-| `include`                | string[] | —       | Only send these keys     |
-| `exclude`                | string[] | —       | Don't send these keys    |
-| `headers`                | object   | `{}`    | Additional headers       |
-| `retryInterval`          | number   | `1000`  | Initial retry (ms)       |
-| `retryScaler`            | number   | `2`     | Backoff multiplier       |
-| `retryMaxWaitMs`         | number   | `30000` | Max retry wait (ms)      |
-| `retryMaxCount`          | number   | `10`    | Max retries              |
-| `requestCancellation`    | boolean  | `false` | Cancel previous          |
-| `onProgress`             | function | —       | Progress callback        |
-| `includeComponents`      | string[] | —       | Include component states |
-| `includeComponentsByTag` | string[] | —       | Include by tag           |
+| Option                   | Type     | Default | Description                        |
+| ------------------------ | -------- | ------- | ---------------------------------- |
+| `include`                | string[] | —       | Add keys to x-sync (union)         |
+| `exclude`                | string[] | —       | Remove keys from result            |
+| `includeFormFields`      | boolean  | `true`  | Include form field values          |
+| `headers`                | object   | `{}`    | Additional headers                 |
+| `retryInterval`          | number   | `1000`  | Initial retry (ms)                 |
+| `retryScaler`            | number   | `2`     | Backoff multiplier                 |
+| `retryMaxWaitMs`         | number   | `30000` | Max retry wait (ms)                |
+| `retryMaxCount`          | number   | `10`    | Max retries                        |
+| `requestCancellation`    | boolean  | `false` | Cancel previous                    |
+| `onProgress`             | function | —       | Progress callback                  |
+| `includeComponents`      | string[] | —       | Include component states           |
+| `includeComponentsByTag` | string[] | —       | Include by tag                     |
 
 ### SSE Events Reference
 
