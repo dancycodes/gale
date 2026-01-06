@@ -476,126 +476,188 @@ class GaleResponse implements Responsable
      * Append HTML content as the last child of matched elements
      *
      * Inserts the provided HTML inside targeted elements, after their existing children.
-     * Corresponds to Datastar patch mode 'append'.
      *
      * @param  string  $selector  CSS selector targeting parent elements
      * @param  string  $html  HTML markup to append
+     * @param  array<string, mixed>  $options  Additional options (scroll, show, focusScroll, useViewTransition, settle, limit)
      * @return static Returns this instance for method chaining
      */
-    public function append(string $selector, string $html): self
+    public function append(string $selector, string $html, array $options = []): self
     {
-        return $this->patchElements($html, [
+        return $this->patchElements($html, array_merge($options, [
             'selector' => $selector,
             'mode' => 'append',
-        ]);
+        ]));
     }
 
     /**
      * Prepend HTML content as the first child of matched elements
      *
      * Inserts the provided HTML inside targeted elements, before their existing children.
-     * Corresponds to Datastar patch mode 'prepend'.
      *
      * @param  string  $selector  CSS selector targeting parent elements
      * @param  string  $html  HTML markup to prepend
+     * @param  array<string, mixed>  $options  Additional options (scroll, show, focusScroll, useViewTransition, settle, limit)
      * @return static Returns this instance for method chaining
      */
-    public function prepend(string $selector, string $html): self
+    public function prepend(string $selector, string $html, array $options = []): self
     {
-        return $this->patchElements($html, [
+        return $this->patchElements($html, array_merge($options, [
             'selector' => $selector,
             'mode' => 'prepend',
-        ]);
+        ]));
     }
 
     /**
-     * Replace matched elements entirely with new HTML
+     * Replace matched elements entirely with new HTML (alias for outer)
      *
      * Substitutes all elements matching the selector with the provided HTML markup.
-     * Corresponds to Datastar patch mode 'replace'.
+     * This is an alias for outer() - uses server-driven state from x-data in response.
      *
      * @param  string  $selector  CSS selector targeting elements to replace
      * @param  string  $html  Replacement HTML markup
+     * @param  array<string, mixed>  $options  Additional options (scroll, show, focusScroll, useViewTransition, settle, limit)
      * @return static Returns this instance for method chaining
      */
-    public function replace(string $selector, string $html): self
+    public function replace(string $selector, string $html, array $options = []): self
     {
-        return $this->patchElements($html, [
-            'selector' => $selector,
-            'mode' => 'replace',
-        ]);
+        return $this->outer($selector, $html, $options);
     }
 
     /**
      * Insert HTML content immediately before matched elements
      *
      * Places the provided HTML as a sibling before each targeted element.
-     * Corresponds to Datastar patch mode 'before'.
      *
      * @param  string  $selector  CSS selector targeting reference elements
      * @param  string  $html  HTML markup to insert
+     * @param  array<string, mixed>  $options  Additional options (scroll, show, focusScroll, useViewTransition, settle, limit)
      * @return static Returns this instance for method chaining
      */
-    public function before(string $selector, string $html): self
+    public function before(string $selector, string $html, array $options = []): self
     {
-        return $this->patchElements($html, [
+        return $this->patchElements($html, array_merge($options, [
             'selector' => $selector,
             'mode' => 'before',
-        ]);
+        ]));
     }
 
     /**
      * Insert HTML content immediately after matched elements
      *
      * Places the provided HTML as a sibling after each targeted element.
-     * Corresponds to Datastar patch mode 'after'.
      *
      * @param  string  $selector  CSS selector targeting reference elements
      * @param  string  $html  HTML markup to insert
+     * @param  array<string, mixed>  $options  Additional options (scroll, show, focusScroll, useViewTransition, settle, limit)
      * @return static Returns this instance for method chaining
      */
-    public function after(string $selector, string $html): self
+    public function after(string $selector, string $html, array $options = []): self
     {
-        return $this->patchElements($html, [
+        return $this->patchElements($html, array_merge($options, [
             'selector' => $selector,
             'mode' => 'after',
-        ]);
+        ]));
     }
 
     /**
-     * Replace the inner HTML of matched elements
+     * Replace the inner HTML of matched elements (server-driven state)
      *
      * Replaces all children of targeted elements with the provided HTML markup, preserving
-     * the elements themselves. Corresponds to Datastar patch mode 'inner'.
+     * the wrapper elements themselves. State comes from x-data in the response HTML.
      *
      * @param  string  $selector  CSS selector targeting container elements
      * @param  string  $html  HTML markup for new inner content
+     * @param  array<string, mixed>  $options  Additional options (scroll, show, focusScroll, useViewTransition, settle, limit)
      * @return static Returns this instance for method chaining
      */
-    public function inner(string $selector, string $html): self
+    public function inner(string $selector, string $html, array $options = []): self
     {
-        return $this->patchElements($html, [
+        return $this->patchElements($html, array_merge($options, [
             'selector' => $selector,
             'mode' => 'inner',
-        ]);
+        ]));
     }
 
     /**
-     * Replace the outer HTML of matched elements
+     * Replace the outer HTML of matched elements (server-driven state)
      *
      * Replaces targeted elements entirely including the elements themselves and their children.
-     * Corresponds to Datastar patch mode 'outer'.
+     * State comes from x-data in the response HTML. This is the DEFAULT mode.
      *
      * @param  string  $selector  CSS selector targeting elements to replace
      * @param  string  $html  HTML markup for complete replacement
+     * @param  array<string, mixed>  $options  Additional options (scroll, show, focusScroll, useViewTransition, settle, limit)
      * @return static Returns this instance for method chaining
      */
-    public function outer(string $selector, string $html): self
+    public function outer(string $selector, string $html, array $options = []): self
     {
-        return $this->patchElements($html, [
+        return $this->patchElements($html, array_merge($options, [
             'selector' => $selector,
             'mode' => 'outer',
-        ]);
+        ]));
+    }
+
+    /**
+     * Smart morph the outer HTML of matched elements (client-preserved state)
+     *
+     * Uses Alpine.morph() for intelligent diffing that preserves client-side state
+     * like form inputs, counters, and local Alpine state.
+     *
+     * @param  string  $selector  CSS selector targeting elements to morph
+     * @param  string  $html  HTML markup to morph into
+     * @param  array<string, mixed>  $options  Additional options (scroll, show, focusScroll, useViewTransition, settle, limit)
+     * @return static Returns this instance for method chaining
+     */
+    public function outerMorph(string $selector, string $html, array $options = []): self
+    {
+        return $this->patchElements($html, array_merge($options, [
+            'selector' => $selector,
+            'mode' => 'outerMorph',
+        ]));
+    }
+
+    /**
+     * Smart morph the inner HTML of matched elements (client-preserved state)
+     *
+     * Uses Alpine.morph() for intelligent diffing that preserves the wrapper element's
+     * client-side state while morphing only its children.
+     *
+     * @param  string  $selector  CSS selector targeting container elements
+     * @param  string  $html  HTML markup to morph children into
+     * @param  array<string, mixed>  $options  Additional options (scroll, show, focusScroll, useViewTransition, settle, limit)
+     * @return static Returns this instance for method chaining
+     */
+    public function innerMorph(string $selector, string $html, array $options = []): self
+    {
+        return $this->patchElements($html, array_merge($options, [
+            'selector' => $selector,
+            'mode' => 'innerMorph',
+        ]));
+    }
+
+    /**
+     * Alias for outerMorph() - backward compatibility with Gale v1
+     *
+     * @param  string  $selector  CSS selector targeting elements to morph
+     * @param  string  $html  HTML markup to morph into
+     * @param  array<string, mixed>  $options  Additional options
+     * @return static Returns this instance for method chaining
+     */
+    public function morph(string $selector, string $html, array $options = []): self
+    {
+        return $this->outerMorph($selector, $html, $options);
+    }
+
+    /**
+     * Alias for remove() - HTMX compatibility
+     *
+     * @param  string  $selector  CSS selector targeting elements to delete
+     * @return static Returns this instance for method chaining
+     */
+    public function delete(string $selector): self
+    {
+        return $this->remove($selector);
     }
 
     /**
@@ -1243,11 +1305,12 @@ class GaleResponse implements Responsable
     /**
      * Build SSE data lines for element patching event
      *
-     * Constructs array of SSE data lines for datastar-patch-elements event including
-     * selector, mode, view transition flag, settle time, limit, and multi-line HTML element content.
+     * Constructs array of SSE data lines for gale-patch-elements event including
+     * selector, mode, view transition flag, settle time, limit, viewport modifiers,
+     * and multi-line HTML element content.
      *
      * @param  string  $elements  HTML content to patch
-     * @param  array<string, mixed>  $options  Patching options (selector, mode, useViewTransition, settle, limit)
+     * @param  array<string, mixed>  $options  Patching options (selector, mode, useViewTransition, settle, limit, scroll, show, focusScroll)
      * @return array<int, string> Array of SSE data lines
      */
     protected function buildElementsEvent(string $elements, array $options): array
@@ -1278,6 +1341,23 @@ class GaleResponse implements Responsable
         if (! empty($options['limit'])) {
             /** @phpstan-ignore cast.int (mixed array value from user options, expected numeric) */
             $dataLines[] = 'limit '.(int) $options['limit'];
+        }
+
+        // Viewport modifier: auto-scroll target ('top' or 'bottom')
+        if (! empty($options['scroll'])) {
+            /** @phpstan-ignore cast.string (mixed array value, safe to cast) */
+            $dataLines[] = 'scroll '.(string) $options['scroll'];
+        }
+
+        // Viewport modifier: scroll into viewport ('top' or 'bottom')
+        if (! empty($options['show'])) {
+            /** @phpstan-ignore cast.string (mixed array value, safe to cast) */
+            $dataLines[] = 'show '.(string) $options['show'];
+        }
+
+        // Viewport modifier: restore focus scroll position
+        if (! empty($options['focusScroll'])) {
+            $dataLines[] = 'focusScroll true';
         }
 
         $elementLines = explode("\n", trim($elements));

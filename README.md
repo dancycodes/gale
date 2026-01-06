@@ -56,7 +56,7 @@ This README documents both:
 -   [Advanced Topics](#advanced-topics)
     -   [SSE Protocol Specification](#sse-protocol-specification)
     -   [State Serialization](#state-serialization)
-    -   [DOM Morphing Modes](#dom-morphing-modes)
+    -   [DOM Patching Modes](#dom-patching-modes)
     -   [View Transitions API](#view-transitions-api)
     -   [Conditional Execution](#conditional-execution)
 -   [API Reference](#api-reference)
@@ -374,13 +374,16 @@ gale()->view('dashboard', $data, web: true);
 
 **Options:**
 
-| Option              | Type   | Default   | Description                     |
-| ------------------- | ------ | --------- | ------------------------------- |
-| `selector`          | string | `null`    | CSS selector for target element |
-| `mode`              | string | `'morph'` | DOM patching mode               |
-| `useViewTransition` | bool   | `false`   | Enable View Transitions API     |
-| `settle`            | int    | `0`       | Delay (ms) before patching      |
-| `limit`             | int    | `null`    | Max elements to patch           |
+| Option              | Type   | Default   | Description                                       |
+| ------------------- | ------ | --------- | ------------------------------------------------- |
+| `selector`          | string | `null`    | CSS selector for target element                   |
+| `mode`              | string | `'outer'` | DOM patching mode (see [DOM Patching Modes](#dom-patching-modes)) |
+| `useViewTransition` | bool   | `false`   | Enable View Transitions API                       |
+| `settle`            | int    | `0`       | Delay (ms) before patching                        |
+| `limit`             | int    | `null`    | Max elements to patch                             |
+| `scroll`            | string | `null`    | Auto-scroll target: `'top'` or `'bottom'`         |
+| `show`              | string | `null`    | Scroll into viewport: `'top'` or `'bottom'`       |
+| `focusScroll`       | bool   | `false`   | Maintain focus scroll position                    |
 
 #### fragment()
 
@@ -445,26 +448,42 @@ gale()->html('<li>New item</li>', [
 #### DOM Convenience Methods
 
 ```php
+// Server-driven state (replacement via initTree)
+gale()->outer('#element', '<div id="element">Replaced</div>');   // DEFAULT mode
+gale()->inner('#container', '<p>Inner content</p>');
+
+// Client-preserved state (smart morphing via Alpine.morph)
+gale()->outerMorph('#element', '<div id="element">Updated</div>');
+gale()->innerMorph('#container', '<p>Morphed content</p>');
+
+// Insertion modes
 gale()->append('#list', '<li>Last</li>');
 gale()->prepend('#list', '<li>First</li>');
 gale()->before('#target', '<div>Before</div>');
 gale()->after('#target', '<div>After</div>');
-gale()->inner('#container', '<p>Inner content</p>');
-gale()->outer('#element', '<div id="element">Replaced</div>');
-gale()->replace('#old', '<div id="new">New</div>');
+
+// Removal
 gale()->remove('.deprecated');
+
+// Viewport modifiers (optional third parameter)
+gale()->append('#chat', $html, ['scroll' => 'bottom']);
+gale()->outer('#form', $html, ['show' => 'top']);
+gale()->outerMorph('#list', $html, ['focusScroll' => true]);
 ```
 
-| Method                      | Equivalent Mode   |
-| --------------------------- | ----------------- |
-| `append($selector, $html)`  | `mode: 'append'`  |
-| `prepend($selector, $html)` | `mode: 'prepend'` |
-| `before($selector, $html)`  | `mode: 'before'`  |
-| `after($selector, $html)`   | `mode: 'after'`   |
-| `inner($selector, $html)`   | `mode: 'inner'`   |
-| `outer($selector, $html)`   | `mode: 'outer'`   |
-| `replace($selector, $html)` | `mode: 'replace'` |
-| `remove($selector)`         | `mode: 'remove'`  |
+| Method                              | Mode          | State Handling    |
+| ----------------------------------- | ------------- | ----------------- |
+| `outer($selector, $html, $opts)`    | `outer`       | Server-driven     |
+| `inner($selector, $html, $opts)`    | `inner`       | Server-driven     |
+| `outerMorph($selector, $html, $opts)` | `outerMorph` | Client-preserved  |
+| `innerMorph($selector, $html, $opts)` | `innerMorph` | Client-preserved  |
+| `append($selector, $html, $opts)`   | `append`      | New elements init |
+| `prepend($selector, $html, $opts)`  | `prepend`     | New elements init |
+| `before($selector, $html, $opts)`   | `before`      | New elements init |
+| `after($selector, $html, $opts)`    | `after`       | New elements init |
+| `remove($selector)`                 | `remove`      | Cleanup           |
+
+**Backward Compatibility:** `replace()` and `morph()` still work as aliases for `outer()` and `outerMorph()` respectively.
 
 ### Blade Fragments
 
@@ -1984,21 +2003,27 @@ data: onlyIfMissing false
 ```
 event: gale-patch-elements
 data: selector #content
-data: mode morph
+data: mode outer
 data: elements <div id="content">...</div>
 data: useViewTransition true
 data: settle 100
 data: limit 10
+data: scroll bottom
+data: show top
+data: focusScroll true
 ```
 
 | Data Line                  | Description                            |
 | -------------------------- | -------------------------------------- |
 | `selector {css}`           | Target element(s)                      |
-| `mode {mode}`              | Patch mode                             |
+| `mode {mode}`              | Patch mode (default: `outer`)          |
 | `elements {html}`          | HTML content (can span multiple lines) |
 | `useViewTransition {bool}` | Use View Transitions                   |
 | `settle {ms}`              | Delay before patch                     |
 | `limit {n}`                | Max elements                           |
+| `scroll {top\|bottom}`     | Auto-scroll target after swap          |
+| `show {top\|bottom}`       | Scroll element into viewport           |
+| `focusScroll {bool}`       | Maintain focus scroll position         |
 
 #### gale-patch-component Format
 
@@ -2075,28 +2100,100 @@ Use request options for per-request overrides:
 </button>
 ```
 
-### DOM Morphing Modes
+### DOM Patching Modes
 
-| Mode      | Alias         | Description                              |
-| --------- | ------------- | ---------------------------------------- |
-| `morph`   | —             | Intelligent diff, preserves Alpine state |
-| `inner`   | `innerHTML`   | Replace inner content                    |
-| `outer`   | `outerHTML`   | Replace entire element                   |
-| `replace` | —             | Same as outer                            |
-| `prepend` | `beforebegin` | Insert as first child                    |
-| `append`  | `beforeend`   | Insert as last child                     |
-| `before`  | `afterbegin`  | Insert before element                    |
-| `after`   | `afterend`    | Insert after element                     |
-| `remove`  | `delete`      | Remove element(s)                        |
+Gale provides 9 DOM patching modes organized into three categories:
 
-#### Morph Behavior
+#### State Handling Categories
 
-The `morph` mode uses Alpine Morph to:
+| Category | Modes | How State Works |
+|----------|-------|-----------------|
+| **Server-driven** | `outer` (DEFAULT), `inner` | State comes from `x-data` in response HTML via `Alpine.initTree()` |
+| **Client-preserved** | `outerMorph`, `innerMorph` | Existing Alpine state preserved via `Alpine.morph()` smart diffing |
+| **Insertion/Deletion** | `before`, `after`, `prepend`, `append`, `remove` | New elements initialized, existing elements unchanged |
 
--   Preserve Alpine component state
--   Minimize DOM changes
--   Maintain focus and scroll position
--   Handle script execution
+#### Complete Mode Reference
+
+| Mode | Aliases | Description | Alpine Method |
+|------|---------|-------------|---------------|
+| `outer` (DEFAULT) | `outerHTML`, `replace` | Replace entire element with server-driven state | `initTree()` |
+| `inner` | `innerHTML` | Replace inner content with server-driven state | `initTree()` |
+| `outerMorph` | `morph` | Smart morph entire element, client-side state preserved | `Alpine.morph()` |
+| `innerMorph` | `morph_inner` | Smart morph children, wrapper state preserved | `Alpine.morph()` |
+| `before` | `beforebegin` | Insert before target element | `initTree()` |
+| `after` | `afterend` | Insert after target element | `initTree()` |
+| `prepend` | `afterbegin` | Insert at start inside target | `initTree()` |
+| `append` | `beforeend` | Insert at end inside target | `initTree()` |
+| `remove` | `delete` | Delete element with cleanup | — |
+
+#### Choosing Between outer and outerMorph
+
+**Use `outer` (default) when:**
+- The server controls all state (e.g., server-rendered forms)
+- You want a clean state reset from the server
+- Performance is critical (replacement is faster than morphing)
+
+**Use `outerMorph` when:**
+- Client has local state that must survive the update (e.g., counters, toggles)
+- Form input focus/values should be preserved
+- Smooth transitions without flicker are needed
+
+#### Example: State Behavior Difference
+
+```php
+// Server response includes x-data="{ count: 99 }"
+
+// outer: Client count=2 → Server sends count=99 → Result: count=99
+gale()->outer('#counter', $html);
+
+// outerMorph: Client count=2 → Server sends count=99 → Result: count=2 (preserved!)
+gale()->outerMorph('#counter', $html);
+```
+
+#### Viewport Modifiers
+
+Control scrolling behavior after DOM patches:
+
+| Option | Values | Description |
+|--------|--------|-------------|
+| `scroll` | `'top'`, `'bottom'` | Auto-scroll target element internally |
+| `show` | `'top'`, `'bottom'` | Scroll element into viewport |
+| `focusScroll` | `true`, `false` | Maintain focus scroll position |
+
+```php
+// Chat: Append message and scroll to bottom
+gale()->append('#chat-messages', $messageHtml, ['scroll' => 'bottom']);
+
+// Form: Update and scroll into view
+gale()->outer('#form', $html, ['show' => 'top']);
+
+// Preserve focus position during morph
+gale()->outerMorph('#editor', $html, ['focusScroll' => true]);
+```
+
+#### Backward Compatibility
+
+These Gale v1 names continue to work:
+
+| Old Name | Maps To | Notes |
+|----------|---------|-------|
+| `morph` | `outerMorph` | State-preserving morph |
+| `morph_inner` | `innerMorph` | Children morph |
+| `replace` | `outer` | Full replacement |
+
+#### HTMX Compatibility Aliases
+
+For developers familiar with HTMX:
+
+| HTMX Name | Maps To |
+|-----------|---------|
+| `outerHTML` | `outer` |
+| `innerHTML` | `inner` |
+| `delete` | `remove` |
+| `beforebegin` | `before` |
+| `afterend` | `after` |
+| `afterbegin` | `prepend` |
+| `beforeend` | `append` |
 
 ### View Transitions API
 
@@ -2205,14 +2302,18 @@ return gale()
 | `fragment`         | `fragment(string $view, string $fragment, array $data = [], array $options = [])`                  | Render fragment             |
 | `fragments`        | `fragments(array $fragments)`                                                                      | Render multiple fragments   |
 | `html`             | `html(string $html, array $options = [], bool $web = false)`                                       | Patch HTML                  |
-| `append`           | `append(string $selector, string $html)`                                                           | Append HTML                 |
-| `prepend`          | `prepend(string $selector, string $html)`                                                          | Prepend HTML                |
-| `before`           | `before(string $selector, string $html)`                                                           | Insert before               |
-| `after`            | `after(string $selector, string $html)`                                                            | Insert after                |
-| `inner`            | `inner(string $selector, string $html)`                                                            | Replace inner               |
-| `outer`            | `outer(string $selector, string $html)`                                                            | Replace outer               |
-| `replace`          | `replace(string $selector, string $html)`                                                          | Replace element             |
-| `remove`           | `remove(string $selector)`                                                                         | Remove element              |
+| `outer`            | `outer(string $selector, string $html, array $options = [])`                                       | Replace element (server state) |
+| `inner`            | `inner(string $selector, string $html, array $options = [])`                                       | Replace inner (server state)   |
+| `outerMorph`       | `outerMorph(string $selector, string $html, array $options = [])`                                  | Morph element (preserve state) |
+| `innerMorph`       | `innerMorph(string $selector, string $html, array $options = [])`                                  | Morph children (preserve state)|
+| `append`           | `append(string $selector, string $html, array $options = [])`                                      | Append HTML                    |
+| `prepend`          | `prepend(string $selector, string $html, array $options = [])`                                     | Prepend HTML                   |
+| `before`           | `before(string $selector, string $html, array $options = [])`                                      | Insert before                  |
+| `after`            | `after(string $selector, string $html, array $options = [])`                                       | Insert after                   |
+| `remove`           | `remove(string $selector)`                                                                         | Remove element                 |
+| `morph`            | `morph(string $selector, string $html, array $options = [])`                                       | Alias for outerMorph           |
+| `replace`          | `replace(string $selector, string $html, array $options = [])`                                     | Alias for outer                |
+| `delete`           | `delete(string $selector)`                                                                         | Alias for remove               |
 | `js`               | `js(string $script, array $options = [])`                                                          | Execute JavaScript          |
 | `dispatch`         | `dispatch(string $event, array $data = [], array $options = [])`                                   | Dispatch event              |
 | `navigate`         | `navigate(string\|array $url, string $key = 'true', array $options = [])`                          | Navigate                    |
@@ -2326,12 +2427,12 @@ return gale()
 
 ### SSE Events Reference
 
-| Event                  | Data Lines                                                             |
-| ---------------------- | ---------------------------------------------------------------------- |
-| `gale-patch-state`     | `state`, `onlyIfMissing`                                               |
-| `gale-patch-elements`  | `selector`, `mode`, `elements`, `useViewTransition`, `settle`, `limit` |
-| `gale-patch-component` | `component`, `state`, `onlyIfMissing`                                  |
-| `gale-invoke-method`   | `component`, `method`, `args`                                          |
+| Event                  | Data Lines                                                                                              |
+| ---------------------- | ------------------------------------------------------------------------------------------------------- |
+| `gale-patch-state`     | `state`, `onlyIfMissing`                                                                                |
+| `gale-patch-elements`  | `selector`, `mode`, `elements`, `useViewTransition`, `settle`, `limit`, `scroll`, `show`, `focusScroll` |
+| `gale-patch-component` | `component`, `state`, `onlyIfMissing`                                                                   |
+| `gale-invoke-method`   | `component`, `method`, `args`                                                                           |
 
 ### Configuration Reference
 
