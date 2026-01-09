@@ -1085,6 +1085,9 @@ class GaleResponse implements Responsable
                     session_write_close();
                 }
 
+                // Allow unlimited execution time for SSE streams
+                set_time_limit(0);
+
                 $this->executeStreamingModeWithCallback($streamCallback);
             });
 
