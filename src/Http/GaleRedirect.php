@@ -31,22 +31,56 @@ class GaleRedirect implements Responsable
     /** @var \Dancycodes\Gale\Http\GaleResponse Parent response builder */
     protected GaleResponse $galeResponse;
 
-    /** @var string Target URL for redirect */
-    protected string $url;
+    /** @var string|null Target URL for redirect (can be set later via to(), route(), back(), etc.) */
+    protected ?string $url = null;
 
     /** @var array<string, mixed> Session flash data to persist for next request */
     protected array $flashData = [];
 
     /**
-     * Initialize redirect builder with target URL and parent response
+     * Initialize redirect builder with optional target URL and parent response
      *
-     * @param string $url Destination URL for redirect
-     * @param \Dancycodes\Gale\Http\GaleResponse $galeResponse Parent response builder instance
+     * URL can be provided here or set later using to(), route(), back(), home(), intended(), etc.
+     * This matches Laravel's redirect() helper which works without requiring an immediate URL.
+     *
+     * @param  string|null  $url  Optional destination URL for redirect
+     * @param  \Dancycodes\Gale\Http\GaleResponse  $galeResponse  Parent response builder instance
      */
-    public function __construct(string $url, GaleResponse $galeResponse)
+    public function __construct(?string $url, GaleResponse $galeResponse)
     {
         $this->url = $url;
         $this->galeResponse = $galeResponse;
+    }
+
+    /**
+     * Set redirect destination URL (Laravel compatibility)
+     *
+     * Provides explicit URL setting matching Laravel's redirect()->to() pattern.
+     *
+     * @param  string  $url  Destination URL for redirect
+     * @return static Returns this instance for method chaining
+     */
+    public function to(string $url): self
+    {
+        $this->url = $url;
+
+        return $this;
+    }
+
+    /**
+     * Redirect to external URL without same-domain validation
+     *
+     * Use this for redirects to external domains. Unlike to(), this method
+     * explicitly signals that the URL is external and bypasses domain checks.
+     *
+     * @param  string  $url  External URL to redirect to
+     * @return static Returns this instance for method chaining
+     */
+    public function away(string $url): self
+    {
+        $this->url = $url;
+
+        return $this;
     }
 
     /**
@@ -120,6 +154,14 @@ class GaleRedirect implements Responsable
     public function toResponse($request = null): \Symfony\Component\HttpFoundation\Response
     {
         $request = $request ?? request();
+
+        // Validate URL is set - throw helpful exception if not
+        if ($this->url === null) {
+            throw new \LogicException(
+                'Redirect URL not set. Use redirect("/path"), redirect()->to("/path"), ' .
+                'redirect()->back(), redirect()->route("name"), redirect()->home(), or redirect()->intended().'
+            );
+        }
 
         // For non-Gale requests, use standard Laravel redirect
         /** @phpstan-ignore method.notFound (isGale is a Request macro) */

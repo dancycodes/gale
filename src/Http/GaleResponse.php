@@ -63,6 +63,12 @@ class GaleResponse implements Responsable
     protected ?int $retryDuration = null;
 
     /**
+     * Pending redirect to be executed when toResponse() is called
+     * Set by when()/unless() callbacks that return a GaleRedirect
+     */
+    protected ?GaleRedirect $pendingRedirect = null;
+
+    /**
      * Reset the response builder state for reuse
      *
      * Clears all accumulated events and resets flags to their initial state.
@@ -77,6 +83,7 @@ class GaleResponse implements Responsable
         $this->urlSet = false;
         $this->eventId = null;
         $this->retryDuration = null;
+        $this->pendingRedirect = null;
     }
 
     /**
@@ -751,10 +758,21 @@ class GaleResponse implements Responsable
      * with Laravel session flash data. Redirects perform JavaScript-based navigation using
      * window.location assignments rather than reactive signal updates.
      *
-     * @param  string  $url  Target URL for the redirect
+     * URL can be provided here or set later using to(), route(), back(), home(), intended(), etc.
+     * This matches Laravel's redirect() helper which works without requiring an immediate URL.
+     *
+     * Examples:
+     *   gale()->redirect('/path')                    // Direct URL
+     *   gale()->redirect()->to('/path')             // Same as above
+     *   gale()->redirect()->back()                  // Previous URL
+     *   gale()->redirect()->route('home')           // Named route
+     *   gale()->redirect()->home()                  // App root
+     *   gale()->redirect()->intended('/fallback')   // Auth intended URL
+     *
+     * @param  string|null  $url  Optional target URL for the redirect
      * @return \Dancycodes\Gale\Http\GaleRedirect Redirect builder instance
      */
-    public function redirect(string $url): GaleRedirect
+    public function redirect(?string $url = null): GaleRedirect
     {
         return new GaleRedirect($url, $this);
     }
@@ -802,67 +820,14 @@ class GaleResponse implements Responsable
     /**
      * Override Laravel redirect helper for streaming mode
      *
-     * Binds custom redirect implementation that performs JavaScript-based navigation
-     * via window.location and terminates the stream. Required because standard Laravel
-     * redirects return Response objects incompatible with active SSE streams.
+     * Binds GaleStreamRedirector which extends Laravel's Redirector to intercept
+     * redirect calls and perform JavaScript-based navigation via window.location.
+     * This satisfies PHP's return type requirements while enabling redirects in streams.
      */
     protected function overrideRedirectForStream(): void
     {
-        app()->bind('redirect', function () {
-            return new class
-            {
-                /**
-                 * @param  array<string, mixed>  $headers
-                 */
-                public function to(string $path, int $status = 302, array $headers = [], ?bool $secure = null): never
-                {
-                    $this->performRealRedirect(url($path));
-                }
-
-                /**
-                 * @param  array<string, mixed>  $params
-                 * @param  array<string, mixed>  $headers
-                 */
-                public function route(string $route, array $params = [], int $status = 302, array $headers = []): never
-                {
-                    $this->performRealRedirect(route($route, $params));
-                }
-
-                /**
-                 * @param  array<string, mixed>  $headers
-                 */
-                public function back(int $status = 302, array $headers = [], string|bool $fallback = false): never
-                {
-                    $this->performRealRedirect(url()->previous() ?: url('/'));
-                }
-
-                private function performRealRedirect(string $url): never
-                {
-                    echo "event: gale-patch-elements\n";
-                    echo 'data: elements <script>window.location.href = '.json_encode($url).";</script>\n";
-                    echo "data: selector body\n";
-                    echo "data: mode append\n\n";
-
-                    if (ob_get_level()) {
-                        ob_end_flush();
-                    }
-                    flush();
-                    exit;
-                }
-
-                /**
-                 * @param  array<int, mixed>  $args
-                 */
-                public function __call(string $method, array $args): mixed
-                {
-                    $result = app('redirect')->{$method}(...$args);
-                    if ($result instanceof \Illuminate\Http\RedirectResponse) {
-                        $this->performRealRedirect($result->getTargetUrl());
-                    }
-
-                    return $result;
-                }
-            };
+        app()->bind('redirect', function ($app) {
+            return new GaleStreamRedirector($app['url'], $app['session.store']);
         });
     }
 
@@ -1089,7 +1054,14 @@ class GaleResponse implements Responsable
         $events = $this->events;
         $streamCallback = $this->streamCallback;
         $webResponse = $this->webResponse;
+        $pendingRedirect = $this->pendingRedirect;
         $this->reset();
+
+        // Handle pending redirect from when()/unless() callbacks
+        // This takes precedence over other response types
+        if ($pendingRedirect !== null) {
+            return $pendingRedirect->toResponse($request);
+        }
 
         // Handle non-Gale requests
         /** @phpstan-ignore method.notFound (isGale is a Request macro) */
@@ -1619,6 +1591,9 @@ class GaleResponse implements Responsable
      * callable that receives this instance and returns boolean. Supports optional
      * fallback callback for else branch.
      *
+     * If the callback returns a GaleRedirect, it will be stored and executed when
+     * toResponse() is called, allowing redirects within conditional blocks.
+     *
      * @param  mixed  $condition  Boolean value or callable returning boolean
      * @param  callable  $callback  Callback to execute if condition is truthy
      * @param  callable|null  $fallback  Optional callback to execute if condition is falsy
@@ -1629,9 +1604,15 @@ class GaleResponse implements Responsable
         $conditionResult = is_callable($condition) ? $condition($this) : $condition;
 
         if ($conditionResult) {
-            $callback($this);
+            $result = $callback($this);
+            if ($result instanceof GaleRedirect) {
+                $this->pendingRedirect = $result;
+            }
         } elseif ($fallback) {
-            $fallback($this);
+            $result = $fallback($this);
+            if ($result instanceof GaleRedirect) {
+                $this->pendingRedirect = $result;
+            }
         }
 
         return $this;
