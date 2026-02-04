@@ -1,0 +1,150 @@
+/**
+ * Gale Default Transition Styles
+ *
+ * These classes are automatically applied during DOM swap/settle phases
+ * to enable smooth CSS transitions between content updates.
+ *
+ * Based on HTMX's proven swap/settle timing model:
+ * @see https://htmx.org/docs/
+ * @see https://htmx.org/examples/animations/
+ *
+ * Override these in your application CSS for custom transitions.
+ *
+ * Timeline:
+ * 1. gale-swapping: Applied to OLD elements before removal
+ * 2. [swap delay] - default 0ms
+ * 3. DOM manipulation occurs
+ * 4. gale-settling + gale-added: Applied to NEW elements after insertion
+ * 5. [settle delay] - default 20ms
+ * 6. gale-settling removed, gale-added removed after addedDuration (100ms)
+ */
+
+/* ============================================
+   SWAP PHASE - Applied to OLD elements before removal
+   Use this for fade-out effects on content being replaced
+   ============================================ */
+
+.gale-swapping {
+    opacity: 0.5;
+    transition: opacity 0.1s ease-out;
+}
+
+/* ============================================
+   NAVIGATION PHASE - Applied during full-page morphs
+   Completely hides content during the morph operation
+   to prevent FOUC (Flash of Unstyled Content)
+   ============================================ */
+
+.gale-navigating {
+    visibility: hidden !important;
+    pointer-events: none !important;
+}
+
+/* Ensure navigating takes precedence over other phases */
+.gale-navigating.gale-swapping,
+.gale-navigating.gale-settling {
+    visibility: hidden !important;
+}
+
+/* ============================================
+   SETTLE PHASE - Applied to NEW elements after insertion
+   Use this for fade-in effects on new content
+   ============================================ */
+
+/*
+ * New content transitions from slightly transparent to fully opaque.
+ * We don't start at opacity: 0 because that causes a flash when
+ * gale-settling is removed before gale-added.
+ */
+.gale-added {
+    /* New content marker - no opacity change by default */
+}
+
+/* During settle phase, ensure content is visible and transitioning */
+.gale-settling {
+    opacity: 1;
+    transition: opacity 0.15s ease-in;
+}
+
+/* Combined selector for elements that are both added and settling */
+.gale-added.gale-settling {
+    opacity: 1;
+}
+
+/* ============================================
+   VIEW TRANSITIONS INTEGRATION
+   Modern browsers support the View Transitions API
+   for native smooth animations
+   ============================================ */
+
+@supports (view-transition-name: gale) {
+    .gale-settling {
+        view-transition-name: gale-settle;
+    }
+}
+
+::view-transition-old(gale-settle) {
+    animation: gale-fade-out 0.15s ease-out;
+}
+
+::view-transition-new(gale-settle) {
+    animation: gale-fade-in 0.15s ease-in;
+}
+
+@keyframes gale-fade-out {
+    from { opacity: 1; }
+    to { opacity: 0; }
+}
+
+@keyframes gale-fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+/* ============================================
+   REDUCED MOTION SUPPORT
+   Respect user preferences for reduced motion
+   ============================================ */
+
+@media (prefers-reduced-motion: reduce) {
+    .gale-swapping,
+    .gale-settling,
+    .gale-added {
+        transition: none !important;
+        animation: none !important;
+    }
+
+    ::view-transition-old(gale-settle),
+    ::view-transition-new(gale-settle) {
+        animation: none !important;
+    }
+}
+
+/* ============================================
+   UTILITY CLASSES
+   Optional classes for custom transition effects
+   ============================================ */
+
+/* Slide transitions */
+.gale-slide-in {
+    transform: translateY(-10px);
+    opacity: 0;
+}
+
+.gale-slide-in.gale-settling {
+    transform: translateY(0);
+    opacity: 1;
+    transition: transform 0.2s ease-out, opacity 0.2s ease-out;
+}
+
+/* Scale transitions */
+.gale-scale-in {
+    transform: scale(0.95);
+    opacity: 0;
+}
+
+.gale-scale-in.gale-settling {
+    transform: scale(1);
+    opacity: 1;
+    transition: transform 0.15s ease-out, opacity 0.15s ease-out;
+}

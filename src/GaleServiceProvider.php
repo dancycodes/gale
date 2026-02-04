@@ -96,6 +96,7 @@ class GaleServiceProvider extends ServiceProvider
 
         $this->publishes([
             __DIR__ . '/../resources/js' => public_path('vendor/gale/js'),
+            __DIR__ . '/../resources/css' => public_path('vendor/gale/css'),
         ], 'gale-assets');
 
         $this->publishes([
@@ -123,9 +124,9 @@ class GaleServiceProvider extends ServiceProvider
      */
     private function registerBladeDirectives(): void
     {
-        // Include Alpine + Gale bundle with CSRF meta tag
+        // Include Alpine + Gale bundle with CSRF meta tag and transition styles
         Blade::directive('gale', function () {
-            return "<?php echo '<meta name=\"csrf-token\" content=\"' . csrf_token() . '\">' . chr(10) . '<script type=\"module\" src=\"' . asset('vendor/gale/js/gale.js') . '\"></script>'; ?>";
+            return "<?php echo '<meta name=\"csrf-token\" content=\"' . csrf_token() . '\">' . chr(10) . '<link rel=\"stylesheet\" href=\"' . asset('vendor/gale/css/gale.css') . '\">' . chr(10) . '<script type=\"module\" src=\"' . asset('vendor/gale/js/gale.js') . '\"></script>'; ?>";
         });
 
         // Inject initial state for Alpine x-data (deprecated, use x-data directly)
