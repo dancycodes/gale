@@ -11,7 +11,7 @@
  * Override these in your application CSS for custom transitions.
  *
  * Timeline:
- * 1. gale-swapping: Applied to OLD elements before removal
+ * 1. gale-swapping: Applied to OLD elements before update
  * 2. [swap delay] - default 0ms
  * 3. DOM manipulation occurs
  * 4. gale-settling + gale-added: Applied to NEW elements after insertion
@@ -20,30 +20,13 @@
  */
 
 /* ============================================
-   SWAP PHASE - Applied to OLD elements before removal
-   Use this for fade-out effects on content being replaced
+   SWAP PHASE - Applied to OLD elements before update
+   Use this for fade-out effects on content being updated
    ============================================ */
 
 .gale-swapping {
     opacity: 0.5;
     transition: opacity 0.1s ease-out;
-}
-
-/* ============================================
-   NAVIGATION PHASE - Applied during full-page morphs
-   Completely hides content during the morph operation
-   to prevent FOUC (Flash of Unstyled Content)
-   ============================================ */
-
-.gale-navigating {
-    visibility: hidden !important;
-    pointer-events: none !important;
-}
-
-/* Ensure navigating takes precedence over other phases */
-.gale-navigating.gale-swapping,
-.gale-navigating.gale-settling {
-    visibility: hidden !important;
 }
 
 /* ============================================

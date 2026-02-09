@@ -953,7 +953,6 @@ Alpine.gale.configureSwapSettle({
         swapping: 'gale-swapping',    // Applied to OLD elements before swap
         settling: 'gale-settling',    // Applied to NEW elements after swap
         added: 'gale-added',          // Applied to NEW elements (kept longer)
-        navigating: 'gale-navigating', // Applied during full-page morphs (prevents FOUC)
     },
     useViewTransition: false,  // Global default for View Transitions API
 });
