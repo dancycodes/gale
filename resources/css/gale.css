@@ -104,6 +104,46 @@
 }
 
 /* ============================================
+   PAGE NAVIGATION TRANSITIONS
+   Applied by the View Transitions API during x-navigate / $navigate.
+   navigate.js calls document.startViewTransition() at click time, so the
+   browser captures the old page before the SSE request and the new page
+   after the DOM update — producing a proper cross-fade between pages.
+   Override ::view-transition-old/new(root) in your app CSS for custom effects.
+   ============================================ */
+
+::view-transition-old(root) {
+    animation: gale-page-exit 0.2s ease-in forwards;
+}
+
+::view-transition-new(root) {
+    animation: gale-page-enter 0.25s ease-out forwards;
+}
+
+@keyframes gale-page-exit {
+    from { opacity: 1; }
+    to   { opacity: 0; }
+}
+
+@keyframes gale-page-enter {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+/* Applied to <html> while the SSE navigation request is in flight.
+   Use html.gale-navigating::before for a progress bar overlay if desired. */
+html.gale-navigating {
+    cursor: progress;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    ::view-transition-old(root),
+    ::view-transition-new(root) {
+        animation: none !important;
+    }
+}
+
+/* ============================================
    UTILITY CLASSES
    Optional classes for custom transition effects
    ============================================ */
