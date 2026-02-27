@@ -37,8 +37,18 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  */
 class GaleResponse implements Responsable
 {
-    /** @var array<int, string> */
+    /** @var array<int, string> SSE-formatted event strings */
     protected array $events = [];
+
+    /**
+     * Structured event data for JSON serialization (HTTP mode)
+     *
+     * Each entry is an associative array with 'type' (string) and 'data' (array) keys,
+     * mirroring the SSE event format in a JSON-encodable structure.
+     *
+     * @var array<int, array{type: string, data: array<string, mixed>}>
+     */
+    protected array $jsonEvents = [];
 
     protected bool $streamingMode = false;
 
@@ -111,6 +121,7 @@ class GaleResponse implements Responsable
     public function reset(): void
     {
         $this->events = [];
+        $this->jsonEvents = [];
         $this->streamingMode = false;
         $this->streamCallback = null;
         $this->webResponse = null;
@@ -287,7 +298,17 @@ class GaleResponse implements Responsable
         }
 
         $dataLines = $this->buildComponentEvent($componentName, $state, $options);
-        $this->handleEvent('gale-patch-component', $dataLines);
+
+        // Build structured data for JSON serialization (BR-003.7)
+        $structuredData = [
+            'component' => $componentName,
+            'state' => $state,
+        ];
+        if (! empty($options['onlyIfMissing'])) {
+            $structuredData['onlyIfMissing'] = true;
+        }
+
+        $this->handleEvent('gale-patch-component', $dataLines, $structuredData);
 
         return $this;
     }
@@ -312,7 +333,15 @@ class GaleResponse implements Responsable
         }
 
         $dataLines = $this->buildMethodInvocationEvent($componentName, $method, $args);
-        $this->handleEvent('gale-invoke-method', $dataLines);
+
+        // Build structured data for JSON serialization (BR-003.8)
+        $structuredData = [
+            'component' => $componentName,
+            'method' => $method,
+            'args' => $args,
+        ];
+
+        $this->handleEvent('gale-invoke-method', $dataLines, $structuredData);
 
         return $this;
     }
@@ -496,6 +525,24 @@ class GaleResponse implements Responsable
                 }));
             ";
         }
+
+        // Add structured JSON event for dispatch (acceptance criteria #8)
+        // In JSON mode, dispatch uses a dedicated gale-dispatch type instead of script execution
+        $dispatchData = [
+            'event' => $eventName,
+            'detail' => $data,
+        ];
+        if ($selector) {
+            $dispatchData['selector'] = $selector;
+        }
+        if ($window) {
+            $dispatchData['window'] = true;
+        }
+        $dispatchData['bubbles'] = $bubbles;
+        $dispatchData['cancelable'] = $cancelable;
+        $dispatchData['composed'] = $composed;
+
+        $this->addJsonEvent('gale-dispatch', $dispatchData);
 
         return $this->executeScript($script, ['autoRemove' => true]);
     }
@@ -715,7 +762,35 @@ class GaleResponse implements Responsable
     protected function patchElements(string $elements, array $options = []): self
     {
         $dataLines = $this->buildElementsEvent($elements, $options);
-        $this->handleEvent('gale-patch-elements', $dataLines);
+
+        // Build structured data for JSON serialization (BR-003.6)
+        $structuredData = ['html' => $elements];
+        if (! empty($options['selector'])) {
+            $structuredData['selector'] = (string) $options['selector'];
+        }
+        if (! empty($options['mode'])) {
+            $structuredData['mode'] = (string) $options['mode'];
+        }
+        if (! empty($options['useViewTransition'])) {
+            $structuredData['useViewTransition'] = true;
+        }
+        if (! empty($options['settle'])) {
+            $structuredData['settle'] = (int) $options['settle'];
+        }
+        if (! empty($options['limit'])) {
+            $structuredData['limit'] = (int) $options['limit'];
+        }
+        if (! empty($options['scroll'])) {
+            $structuredData['scroll'] = (string) $options['scroll'];
+        }
+        if (! empty($options['show'])) {
+            $structuredData['show'] = (string) $options['show'];
+        }
+        if (! empty($options['focusScroll'])) {
+            $structuredData['focusScroll'] = true;
+        }
+
+        $this->handleEvent('gale-patch-elements', $dataLines, $structuredData);
 
         return $this;
     }
@@ -740,7 +815,15 @@ class GaleResponse implements Responsable
         }
 
         $dataLines = $this->buildStateEvent($state, $options);
-        $this->handleEvent('gale-patch-state', $dataLines);
+
+        // Build structured data for JSON serialization (BR-003.5)
+        // State data is the state object directly; onlyIfMissing is included as metadata
+        $structuredData = $state;
+        if (! empty($options['onlyIfMissing'])) {
+            $structuredData = array_merge(['onlyIfMissing' => true], $state);
+        }
+
+        $this->handleEvent('gale-patch-state', $dataLines, $structuredData);
 
         return $this;
     }
@@ -759,6 +842,22 @@ class GaleResponse implements Responsable
     protected function executeScript(string $script, array $options = []): self
     {
         $dataLines = $this->buildScriptEvent($script, $options);
+
+        // Build structured data for JSON serialization (acceptance criteria #6)
+        // Script execution events use the gale-execute-script type in JSON format
+        // to distinguish from regular element patches
+        $structuredData = [
+            'script' => $script,
+            'options' => array_filter([
+                'autoRemove' => $options['autoRemove'] ?? true,
+                'attributes' => $options['attributes'] ?? null,
+            ], fn ($v) => $v !== null),
+        ];
+
+        // Use gale-execute-script type for JSON (distinct from gale-patch-elements)
+        // While SSE reuses gale-patch-elements with a script tag, JSON mode uses a
+        // dedicated event type for cleaner client-side processing
+        $this->addJsonEvent('gale-execute-script', $structuredData);
         $this->handleEvent('gale-patch-elements', $dataLines);
 
         return $this;
@@ -780,7 +879,17 @@ class GaleResponse implements Responsable
         $options['selector'] = $selector;
         $options['mode'] = 'remove';
         $dataLines = $this->buildRemovalEvent($options);
-        $this->handleEvent('gale-patch-elements', $dataLines);
+
+        // Build structured data for JSON serialization
+        $structuredData = [
+            'selector' => $selector,
+            'mode' => 'remove',
+        ];
+        if (! empty($options['useViewTransition'])) {
+            $structuredData['useViewTransition'] = true;
+        }
+
+        $this->handleEvent('gale-patch-elements', $dataLines, $structuredData);
 
         return $this;
     }
@@ -1068,6 +1177,45 @@ class GaleResponse implements Responsable
     }
 
     /**
+     * Serialize accumulated events to a JSON-encodable array (HTTP mode)
+     *
+     * Converts the accumulated response events into a structured JSON format suitable
+     * for HTTP mode responses. Each event is represented as an object with `type` and
+     * `data` fields, mirroring the SSE event format in a JSON-friendly structure.
+     *
+     * The same event types that exist in SSE mode (gale-patch-state, gale-patch-elements,
+     * gale-patch-component, gale-invoke-method, gale-execute-script, gale-dispatch,
+     * gale-redirect) are represented as objects in the `events` array.
+     *
+     * This method does NOT reset the response state (BR-003.10). Resetting is handled
+     * by toResponse() to allow the singleton to be reused across requests.
+     *
+     * @return array{events: array<int, array{type: string, data: array<string, mixed>}>} JSON-encodable array
+     */
+    public function toJson(): array
+    {
+        return [
+            'events' => $this->jsonEvents,
+        ];
+    }
+
+    /**
+     * Encode accumulated events as a JSON string (HTTP mode)
+     *
+     * Convenience method that JSON-encodes the output of toJson() with appropriate
+     * flags for safe embedding in HTTP responses.
+     *
+     * @return string JSON string representation of accumulated events
+     */
+    public function toJsonString(): string
+    {
+        return (string) json_encode(
+            $this->toJson(),
+            JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
+        );
+    }
+
+    /**
      * Convert to HTTP response implementing Responsable interface
      *
      * Transforms this builder into a framework-compatible response object. For non-Gale
@@ -1148,10 +1296,13 @@ class GaleResponse implements Responsable
      * the response is in streaming or normal mode. Short-circuits immediately for non-Gale
      * requests to avoid unnecessary processing.
      *
-     * @param  string  $eventType  SSE event type (datastar-patch-elements, datastar-patch-signals)
+     * Also stores structured event data for JSON serialization (HTTP mode) when provided.
+     *
+     * @param  string  $eventType  SSE event type (gale-patch-elements, gale-patch-state, etc.)
      * @param  array<int, string>  $dataLines  SSE data lines for the event
+     * @param  array<string, mixed>|null  $structuredData  Optional structured data for JSON serialization
      */
-    protected function handleEvent(string $eventType, array $dataLines): void
+    protected function handleEvent(string $eventType, array $dataLines, ?array $structuredData = null): void
     {
         /** @phpstan-ignore method.notFound (isGale is a Request macro) */
         if (! request()->isGale()) {
@@ -1161,7 +1312,7 @@ class GaleResponse implements Responsable
         if ($this->streamingMode) {
             $this->sendEventImmediately($eventType, $dataLines);
         } else {
-            $this->addEventToQueue($eventType, $dataLines);
+            $this->addEventToQueue($eventType, $dataLines, $structuredData);
         }
     }
 
@@ -1241,14 +1392,40 @@ class GaleResponse implements Responsable
      * Add formatted SSE event to accumulation queue
      *
      * Stores event for later transmission when response is converted. Used exclusively
-     * in normal mode before stream() is called.
+     * in normal mode before stream() is called. Also stores structured data for JSON
+     * serialization when provided.
      *
      * @param  string  $eventType  SSE event type
      * @param  array<int, string>  $dataLines  SSE data lines
+     * @param  array<string, mixed>|null  $structuredData  Optional structured data for JSON serialization
      */
-    protected function addEventToQueue(string $eventType, array $dataLines): void
+    protected function addEventToQueue(string $eventType, array $dataLines, ?array $structuredData = null): void
     {
         $this->events[] = $this->formatEvent($eventType, $dataLines);
+
+        if ($structuredData !== null) {
+            $this->jsonEvents[] = [
+                'type' => $eventType,
+                'data' => $structuredData,
+            ];
+        }
+    }
+
+    /**
+     * Add a structured event directly to the JSON events queue
+     *
+     * Used when the JSON event type differs from the SSE event type (e.g.,
+     * script execution uses gale-patch-elements in SSE but gale-execute-script in JSON).
+     *
+     * @param  string  $eventType  JSON event type
+     * @param  array<string, mixed>  $data  Structured event data
+     */
+    protected function addJsonEvent(string $eventType, array $data): void
+    {
+        $this->jsonEvents[] = [
+            'type' => $eventType,
+            'data' => $data,
+        ];
     }
 
     /**
