@@ -5,6 +5,7 @@ namespace Dancycodes\Gale\Http;
 use Closure;
 use Dancycodes\Gale\View\Fragment\BladeFragment;
 use Illuminate\Contracts\Support\Responsable;
+use Illuminate\Http\JsonResponse;
 use LogicException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -110,6 +111,35 @@ class GaleResponse implements Responsable
         }
 
         return $mode;
+    }
+
+    /**
+     * Resolve the effective response mode for the current request
+     *
+     * Checks the `Gale-Mode` request header first (per-request override),
+     * then falls back to `resolveMode()` (config-based default).
+     *
+     * Mode resolution priority (lowest to highest):
+     * 1. config('gale.mode') via resolveMode()
+     * 2. Gale-Mode request header (this method)
+     * 3. stream() callback presence — always SSE (checked in toResponse)
+     *
+     * Invalid header values are silently ignored and fall back to config.
+     *
+     * @param  \Illuminate\Http\Request|null  $request  Laravel request instance or null for auto-detection
+     * @return string The resolved mode: 'http' or 'sse'
+     */
+    public static function resolveRequestMode($request = null): string
+    {
+        $request = $request ?? request();
+
+        $headerMode = $request->header('Gale-Mode');
+
+        if (is_string($headerMode) && in_array($headerMode, self::VALID_MODES, true)) {
+            return $headerMode;
+        }
+
+        return self::resolveMode();
     }
 
     /**
@@ -1218,13 +1248,19 @@ class GaleResponse implements Responsable
     /**
      * Convert to HTTP response implementing Responsable interface
      *
-     * Transforms this builder into a framework-compatible response object. For non-Gale
-     * requests, returns the web fallback if configured, otherwise throws LogicException.
-     * For Gale requests, creates a StreamedResponse with SSE headers that outputs either
-     * accumulated events (normal mode) or executes streaming callback (streaming mode).
+     * Transforms this builder into a framework-compatible response object.
+     *
+     * For non-Gale requests: returns the web fallback if configured, otherwise 204 No Content.
+     * For Gale requests in HTTP mode: returns a JsonResponse with Content-Type application/json.
+     * For Gale requests in SSE mode: returns a StreamedResponse with Content-Type text/event-stream.
+     *
+     * Mode resolution priority:
+     * 1. stream() callback presence — always SSE (highest priority)
+     * 2. Gale-Mode request header — per-request override
+     * 3. config('gale.mode') — server-side default
      *
      * @param  \Illuminate\Http\Request|null  $request  Laravel request instance or null for auto-detection
-     * @return \Symfony\Component\HttpFoundation\StreamedResponse|mixed StreamedResponse for Gale, fallback for web
+     * @return \Illuminate\Http\JsonResponse|\Symfony\Component\HttpFoundation\StreamedResponse|mixed
      *
      * @throws \LogicException When no web fallback provided for non-Gale request
      */
@@ -1234,6 +1270,7 @@ class GaleResponse implements Responsable
 
         // Capture current state and reset for next request (singleton reuse)
         $events = $this->events;
+        $jsonEvents = $this->jsonEvents;
         $streamCallback = $this->streamCallback;
         $webResponse = $this->webResponse;
         $pendingRedirect = $this->pendingRedirect;
@@ -1259,7 +1296,7 @@ class GaleResponse implements Responsable
                 : $webResponse;
         }
 
-        // Handle Gale requests
+        // Handle Gale requests — stream() always forces SSE (BR-004.3)
         if ($streamCallback) {
             // Streaming mode: use StreamedResponse for real-time output
             $response = new StreamedResponse(function () use ($streamCallback) {
@@ -1280,7 +1317,22 @@ class GaleResponse implements Responsable
             return $response;
         }
 
-        // Single-shot mode: use regular Response (works better with test environments)
+        // Resolve mode: Gale-Mode header > config('gale.mode') > 'http' default (BR-004.8)
+        $mode = self::resolveRequestMode($request);
+
+        if ($mode === 'http') {
+            // HTTP mode: return JsonResponse with serialized events (BR-004.1, BR-004.6)
+            return new JsonResponse(
+                data: ['events' => $jsonEvents],
+                status: 200,
+                headers: [
+                    'X-Gale-Response' => 'true',
+                ],
+                json: false,
+            );
+        }
+
+        // SSE mode: use regular Response (works better with test environments) (BR-004.2)
         $output = ": keepalive\n\n";
         foreach ($events as $event) {
             $output .= $event;
