@@ -4,6 +4,7 @@ namespace Dancycodes\Gale;
 
 use Dancycodes\Gale\Exceptions\GaleMessageException;
 use Dancycodes\Gale\Http\GaleRedirect;
+use Dancycodes\Gale\Http\GaleResponse;
 use Dancycodes\Gale\View\Fragment\BladeFragment;
 use Illuminate\Http\Request;
 use Illuminate\Routing\ResponseFactory;
@@ -54,7 +55,7 @@ class GaleServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        require_once __DIR__ . '/helpers.php';
+        require_once __DIR__.'/helpers.php';
 
         // Use scoped() to ensure a fresh GaleResponse instance per request
         // This prevents state corruption across multiple requests in the same process
@@ -64,7 +65,7 @@ class GaleServiceProvider extends ServiceProvider
         });
 
         $this->mergeConfigFrom(
-            __DIR__ . '/../config/gale.php',
+            __DIR__.'/../config/gale.php',
             'gale'
         );
 
@@ -95,12 +96,12 @@ class GaleServiceProvider extends ServiceProvider
         }
 
         $this->publishes([
-            __DIR__ . '/../resources/js' => public_path('vendor/gale/js'),
-            __DIR__ . '/../resources/css' => public_path('vendor/gale/css'),
+            __DIR__.'/../resources/js' => public_path('vendor/gale/js'),
+            __DIR__.'/../resources/css' => public_path('vendor/gale/css'),
         ], 'gale-assets');
 
         $this->publishes([
-            __DIR__ . '/../config/gale.php' => config_path('gale.php'),
+            __DIR__.'/../config/gale.php' => config_path('gale.php'),
         ], 'gale-config');
 
         $this->registerBladeDirectives();
@@ -179,7 +180,7 @@ class GaleServiceProvider extends ServiceProvider
     {
         $registerDirectives = function (BladeCompiler $blade) {
             // Only register if not already registered (prevents double registration)
-            if (!isset($blade->getCustomDirectives()['fragment'])) {
+            if (! isset($blade->getCustomDirectives()['fragment'])) {
                 $blade->directive('fragment', static fn () => '');
                 $blade->directive('endfragment', static fn () => '');
             }
@@ -226,6 +227,8 @@ class GaleServiceProvider extends ServiceProvider
      *
      * - isGale(): Detects if the current request is a Gale reactive request
      *   by checking for the Gale-Request header
+     * - galeMode(): Returns the resolved response mode ('http' or 'sse') by
+     *   reading the Gale-Mode header with fallback to config('gale.mode')
      * - state(): Retrieves state values from the request JSON body
      * - signals(): Deprecated alias for state(), kept for backward compatibility
      * - isGaleNavigate(): Checks if the request is a navigate request and
@@ -243,6 +246,23 @@ class GaleServiceProvider extends ServiceProvider
             return $this->hasHeader('Gale-Request');
         });
 
+        // Resolve the response mode from the Gale-Mode header or config fallback
+        // Priority: Gale-Mode header (case-insensitive) > config('gale.mode') > 'http'
+        Request::macro('galeMode', function (): string {
+            $headerMode = $this->header('Gale-Mode');
+
+            if (is_string($headerMode) && $headerMode !== '') {
+                $normalized = strtolower(trim($headerMode));
+
+                if (in_array($normalized, GaleResponse::VALID_MODES, true)) {
+                    return $normalized;
+                }
+            }
+
+            // Fall through to config, then built-in default
+            return GaleResponse::resolveMode();
+        });
+
         // State access macro - retrieves state from request JSON body
         Request::macro('state', function (?string $key = null, mixed $default = null) {
             $state = $this->json()->all();
@@ -257,7 +277,7 @@ class GaleServiceProvider extends ServiceProvider
         // Check if request is a Gale navigate request
         Request::macro('isGaleNavigate', function (string|array|null $key = null) {
             // First check if this is a navigate request at all
-            if (!$this->hasHeader('GALE-NAVIGATE')) {
+            if (! $this->hasHeader('GALE-NAVIGATE')) {
                 return false;
             }
 
@@ -278,7 +298,7 @@ class GaleServiceProvider extends ServiceProvider
 
             // Handle array of keys to check
             if (is_array($key)) {
-                return !empty(array_intersect($key, $navigateKeys));
+                return ! empty(array_intersect($key, $navigateKeys));
             }
 
             // Handle single key
@@ -312,7 +332,7 @@ class GaleServiceProvider extends ServiceProvider
             $existingMessages = $this->state('messages') ?? [];
 
             // Ensure existingMessages is an array
-            if (!is_array($existingMessages)) {
+            if (! is_array($existingMessages)) {
                 $existingMessages = [];
             }
 
@@ -324,7 +344,7 @@ class GaleServiceProvider extends ServiceProvider
                     // to match all existing message keys like 'items.0.name', 'items.1.name'
                     $pattern = preg_quote($ruleKey, '/');
                     $pattern = str_replace('\*', '\d+', $pattern); // Replace * with \d+ for numeric indices
-                    $pattern = '/^' . $pattern . '$/';
+                    $pattern = '/^'.$pattern.'$/';
 
                     // Clear ALL existing message keys matching the pattern
                     foreach (array_keys($clearedMessages) as $msgKey) {
@@ -393,7 +413,7 @@ class GaleServiceProvider extends ServiceProvider
             return;
         }
 
-        if (!config('gale.route_discovery.enabled', false)) {
+        if (! config('gale.route_discovery.enabled', false)) {
             return;
         }
 

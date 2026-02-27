@@ -135,8 +135,12 @@ class GaleResponse implements Responsable
 
         $headerMode = $request->header('Gale-Mode');
 
-        if (is_string($headerMode) && in_array($headerMode, self::VALID_MODES, true)) {
-            return $headerMode;
+        if (is_string($headerMode) && $headerMode !== '') {
+            $normalized = strtolower(trim($headerMode));
+
+            if (in_array($normalized, self::VALID_MODES, true)) {
+                return $normalized;
+            }
         }
 
         return self::resolveMode();
