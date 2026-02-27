@@ -1296,16 +1296,21 @@ class GaleResponse implements Responsable
                 : $webResponse;
         }
 
-        // Handle Gale requests — stream() always forces SSE (BR-004.3)
+        // Handle Gale requests — stream() always forces SSE (BR-009.1, BR-009.2, BR-009.3)
+        // Mode resolution is bypassed entirely when streamCallback is set
         if ($streamCallback) {
-            // Streaming mode: use StreamedResponse for real-time output
-            $response = new StreamedResponse(function () use ($streamCallback) {
+            // Streaming mode: use StreamedResponse for real-time output (BR-009.6)
+            $response = new StreamedResponse(function () use ($streamCallback, $events) {
+                // Close session before streaming begins (BR-009.7)
                 if (session_status() === PHP_SESSION_ACTIVE) {
                     session_write_close();
                 }
 
-                // Allow unlimited execution time for SSE streams
+                // Allow unlimited execution time for SSE streams (BR-009.8)
                 set_time_limit(0);
+
+                // Restore pre-accumulated events so they are flushed first (BR-009.4)
+                $this->events = $events;
 
                 $this->executeStreamingModeWithCallback($streamCallback);
             });
