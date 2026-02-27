@@ -69,6 +69,40 @@ class GaleResponse implements Responsable
     protected ?GaleRedirect $pendingRedirect = null;
 
     /**
+     * Valid response modes for Gale
+     *
+     * @var array<int, string>
+     */
+    public const VALID_MODES = ['http', 'sse'];
+
+    /**
+     * Default response mode when none is configured or an invalid value is set
+     */
+    public const DEFAULT_MODE = 'http';
+
+    /**
+     * Resolve the configured default response mode
+     *
+     * Reads `config('gale.mode')` and validates it against the allowed values.
+     * Invalid or missing values fall back to 'http' (fail-safe).
+     *
+     * This is the lowest-priority mode selector. Request headers (F-013) and
+     * per-action options (F-007) take precedence over this config value.
+     *
+     * @return string The resolved mode: 'http' or 'sse'
+     */
+    public static function resolveMode(): string
+    {
+        $mode = config('gale.mode');
+
+        if (! is_string($mode) || ! in_array($mode, self::VALID_MODES, true)) {
+            return self::DEFAULT_MODE;
+        }
+
+        return $mode;
+    }
+
+    /**
      * Reset the response builder state for reuse
      *
      * Clears all accumulated events and resets flags to their initial state.
