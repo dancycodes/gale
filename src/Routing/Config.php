@@ -9,6 +9,7 @@ use Dancycodes\Gale\Routing\PendingRouteTransformers\HandleDoNotDiscoverAttribut
 use Dancycodes\Gale\Routing\PendingRouteTransformers\HandleFullUriAttribute;
 use Dancycodes\Gale\Routing\PendingRouteTransformers\HandleHttpMethodsAttribute;
 use Dancycodes\Gale\Routing\PendingRouteTransformers\HandleMiddlewareAttribute;
+use Dancycodes\Gale\Routing\PendingRouteTransformers\HandlePrefixAttribute;
 use Dancycodes\Gale\Routing\PendingRouteTransformers\HandleRouteNameAttribute;
 use Dancycodes\Gale\Routing\PendingRouteTransformers\HandleUriAttribute;
 use Dancycodes\Gale\Routing\PendingRouteTransformers\HandleUrisOfNestedControllers;
@@ -29,6 +30,7 @@ class Config
             RejectDefaultControllerMethodRoutes::class,
             HandleDoNotDiscoverAttribute::class,
             AddControllerUriToActions::class,
+            HandlePrefixAttribute::class,
             HandleUrisOfNestedControllers::class,
             HandleRouteNameAttribute::class,
             HandleMiddlewareAttribute::class,

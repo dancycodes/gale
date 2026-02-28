@@ -23,7 +23,7 @@ use Attribute;
  * @see \Dancycodes\Gale\Routing\Discovery\Discover
  * @see \Dancycodes\Gale\Routing\PendingRouteTransformers\HandleWheresAttribute
  */
-#[Attribute(Attribute::TARGET_METHOD | Attribute::TARGET_CLASS)]
+#[Attribute(Attribute::TARGET_METHOD | Attribute::TARGET_CLASS | Attribute::IS_REPEATABLE)]
 class Where implements DiscoveryAttribute
 {
     /** Regular expression pattern matching alphabetic characters only */
@@ -41,8 +41,8 @@ class Where implements DiscoveryAttribute
     /**
      * Initialize route parameter constraint attribute
      *
-     * @param string $param Route parameter name to constrain
-     * @param string $constraint Regular expression pattern for validation
+     * @param  string  $param  Route parameter name to constrain
+     * @param  string  $constraint  Regular expression pattern for validation
      */
     public function __construct(
         public string $param,
