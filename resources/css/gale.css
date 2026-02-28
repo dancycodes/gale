@@ -131,14 +131,40 @@
 }
 
 /* Applied to <html> while the SSE navigation request is in flight.
-   Use html.gale-navigating::before for a progress bar overlay if desired. */
+   Shows a progress indicator and wait cursor (F-075: FOUC Prevention). */
 html.gale-navigating {
     cursor: progress;
+}
+
+/* Navigation progress bar — thin animated bar at top of viewport (BR-F075-09).
+   Visible during SPA navigation while stylesheet loading / DOM swap is in progress.
+   Override in your app CSS to customize the color or animation. */
+html.gale-navigating::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 3px;
+    z-index: 99999;
+    background: linear-gradient(90deg, transparent 0%, currentColor 50%, transparent 100%);
+    color: #6366f1; /* Indigo — matches typical primary color */
+    animation: gale-progress 1.5s ease-in-out infinite;
+    pointer-events: none;
+}
+
+@keyframes gale-progress {
+    0%   { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
 }
 
 @media (prefers-reduced-motion: reduce) {
     ::view-transition-old(root),
     ::view-transition-new(root) {
+        animation: none !important;
+    }
+
+    html.gale-navigating::before {
         animation: none !important;
     }
 }
