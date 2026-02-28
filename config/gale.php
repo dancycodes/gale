@@ -39,6 +39,22 @@ return [
         'enabled' => false,  // Opt-in by default
 
         /*
+         * Convention-based method auto-discovery settings.
+         *
+         * When 'conventions' is true, controller methods whose names match standard
+         * CRUD conventions (index, create, store, show, edit, update, destroy) are
+         * automatically registered as routes without requiring #[Route] attributes.
+         *
+         * Non-conventional public methods (e.g. sendNotification) are NOT registered
+         * unless they have an explicit #[Route] attribute.
+         *
+         * Apply #[NoAutoDiscovery] to a controller class to disable convention-based
+         * discovery for that specific controller while still allowing explicit #[Route]
+         * attributes on its methods.
+         */
+        'conventions' => true,
+
+        /*
          * Routes will be registered for all controllers found in
          * these directories.
          */

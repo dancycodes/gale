@@ -4,6 +4,7 @@ namespace Dancycodes\Gale\Routing;
 
 use Dancycodes\Gale\Routing\PendingRouteTransformers\AddControllerUriToActions;
 use Dancycodes\Gale\Routing\PendingRouteTransformers\AddDefaultRouteName;
+use Dancycodes\Gale\Routing\PendingRouteTransformers\HandleConventionBasedDiscovery;
 use Dancycodes\Gale\Routing\PendingRouteTransformers\HandleDomainAttribute;
 use Dancycodes\Gale\Routing\PendingRouteTransformers\HandleDoNotDiscoverAttribute;
 use Dancycodes\Gale\Routing\PendingRouteTransformers\HandleFullUriAttribute;
@@ -28,6 +29,7 @@ class Config
     {
         return [
             RejectDefaultControllerMethodRoutes::class,
+            HandleConventionBasedDiscovery::class,
             HandleDoNotDiscoverAttribute::class,
             AddControllerUriToActions::class,
             HandlePrefixAttribute::class,
