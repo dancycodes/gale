@@ -6,7 +6,6 @@ use Closure;
 use Dancycodes\Gale\View\Fragment\BladeFragment;
 use Illuminate\Contracts\Support\Responsable;
 use Illuminate\Http\JsonResponse;
-use LogicException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
@@ -1059,38 +1058,13 @@ class GaleResponse implements Responsable
             $output = ob_get_clean().$output;
         }
 
-        // If there's output, send it to replace the document
+        // If there's output, wrap it and send to replace the document
         if (! empty(trim($output))) {
-            // Check if output looks like HTML (dd/dump output includes HTML)
-            if ($this->looksLikeHtml($output)) {
-                // Wrap in basic HTML structure if it doesn't have doctype
-                if (stripos($output, '<!DOCTYPE') === false && stripos($output, '<html') === false) {
-                    $output = '<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>Laravel Output</title>
-</head>
-<body>'.$output.'</body>
-</html>';
-                }
-            } else {
-                // Plain text output - wrap in minimal HTML
-                $output = '<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>Laravel Output</title>
-</head>
-<body style="background: #18171B; color: white; font-family: monospace; padding: 20px;">
-<pre>'.htmlspecialchars($output).'</pre>
-</body>
-</html>';
-            }
+            $html = $this->wrapOutputAsHtml($output);
 
-            // Send via SSE to replace document
+            // Send via SSE to replace document (trusted Laravel backend content)
             echo "event: gale-patch-elements\n";
-            echo 'data: elements <script>document.open(); document.write('.json_encode($output)."); document.close();</script>\n";
+            echo 'data: elements <script>document.open(); document.write('.json_encode($html)."); document.close();</script>\n";
             echo "data: selector body\n";
             echo "data: mode append\n\n";
             flush();
@@ -1106,6 +1080,48 @@ class GaleResponse implements Responsable
         return preg_match('/<[a-z][\s\S]*>/i', $content) === 1
             || strpos($content, 'sf-dump') !== false
             || strpos($content, '<!DOCTYPE') !== false;
+    }
+
+    /**
+     * Wrap raw output as a complete HTML document
+     *
+     * If the output looks like HTML (e.g., dd/dump output), wraps it in a basic
+     * HTML structure when it lacks a doctype. Plain text is wrapped in a monospace
+     * pre-formatted block. Already-complete HTML documents are returned as-is.
+     *
+     * @param  string  $output  Raw output content
+     * @return string Complete HTML document
+     */
+    private function wrapOutputAsHtml(string $output): string
+    {
+        if ($this->looksLikeHtml($output)) {
+            // Already complete HTML document - return as-is
+            if (stripos($output, '<!DOCTYPE') !== false || stripos($output, '<html') !== false) {
+                return $output;
+            }
+
+            // HTML fragment - wrap in basic structure
+            return '<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Laravel Output</title>
+</head>
+<body>'.$output.'</body>
+</html>';
+        }
+
+        // Plain text - wrap in monospace pre-formatted block
+        return '<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Laravel Output</title>
+</head>
+<body style="background: #18171B; color: white; font-family: monospace; padding: 20px;">
+<pre>'.htmlspecialchars($output).'</pre>
+</body>
+</html>';
     }
 
     /**
@@ -1127,38 +1143,8 @@ class GaleResponse implements Responsable
             return;
         }
 
-        if (! empty(trim($output))) {
-            // Check if output looks like HTML (Laravel's native dd/dump includes HTML)
-            if ($this->looksLikeHtml($output)) {
-                // Wrap in basic HTML structure if it doesn't have doctype
-                if (stripos($output, '<!DOCTYPE') === false && stripos($output, '<html') === false) {
-                    $html = '<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>Laravel Output</title>
-</head>
-<body>'.$output.'</body>
-</html>';
-                } else {
-                    $html = $output;
-                }
-            } else {
-                // Plain text output - wrap in minimal HTML
-                $html = '<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>Laravel Output</title>
-</head>
-<body style="background: #18171B; color: white; font-family: monospace; padding: 20px;">
-<pre>'.htmlspecialchars($output).'</pre>
-</body>
-</html>';
-            }
-
-            $this->replaceDocumentAndExit($html);
-        }
+        $html = $this->wrapOutputAsHtml($output);
+        $this->replaceDocumentAndExit($html);
     }
 
     /**
@@ -1872,7 +1858,7 @@ class GaleResponse implements Responsable
     /**
      * Configure fallback response for non-Gale requests
      *
-     * Sets the response to return when the request does not include the Datastar-Request
+     * Sets the response to return when the request does not include the Gale-Request
      * header. Accepts any value that Laravel can convert to a response, including Response
      * objects, views, redirects, or closures that return these types. If not configured,
      * LogicException is thrown for non-Gale requests when toResponse() is called.
@@ -1948,7 +1934,7 @@ class GaleResponse implements Responsable
      * Execute callback only for Gale requests
      *
      * Convenience method for conditional execution based on request type. Automatically
-     * detects Gale requests via Datastar-Request header and executes callback only
+     * detects Gale requests via Gale-Request header and executes callback only
      * when present. Supports optional fallback for non-Gale requests.
      *
      * @param  callable  $callback  Callback to execute for Gale requests
@@ -1965,7 +1951,7 @@ class GaleResponse implements Responsable
      * Execute callback only for non-Gale requests
      *
      * Inverse of whenGale() that executes callback for standard HTTP requests without
-     * Datastar-Request header. Useful for providing alternate behavior for traditional
+     * Gale-Request header. Useful for providing alternate behavior for traditional
      * full-page requests.
      *
      * @param  callable  $callback  Callback to execute for non-Gale requests
@@ -2105,7 +2091,7 @@ class GaleResponse implements Responsable
      * REPLACES THE EXISTING navigate() METHOD WITH EXPLICIT BEHAVIOR
      *
      * @param  string|array<string, mixed>  $url  URL string or array of query parameters
-     * @param  string  $key  Navigation key for Datastar routing
+     * @param  string  $key  Navigation key for Gale routing
      * @param  array<string, mixed>  $options  Navigation options
      */
     public function navigate(string|array $url, string $key = 'true', array $options = []): self
@@ -2278,7 +2264,7 @@ class GaleResponse implements Responsable
     }
 
     /**
-     * Generate enhanced navigation script using Datastar action
+     * Generate enhanced navigation script using Gale action
      *
      * @param  string  $url  Target URL
      * @param  string  $key  Navigation key
@@ -2306,9 +2292,8 @@ class GaleResponse implements Responsable
             $frontendOptions['replace'] = true;
         }
 
-        // DATASTAR-NATIVE APPROACH: Use signals to trigger navigation
-        // Set a special __galeNavigate signal that the frontend watcher will detect
-        // This is the proper Datastar way - reactive signal-based triggering!
+        // Use a custom DOM event to trigger navigation
+        // The frontend navigate watcher listens for 'gale:navigate' events
         $navigationData = [
             'url' => $url,
             'key' => $key,
@@ -2319,7 +2304,6 @@ class GaleResponse implements Responsable
         $safeData = json_encode($navigationData, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_SLASHES);
 
         // Dispatch a custom DOM event that our navigate watcher will listen to
-        // This works in script execution context and is Datastar-compatible
         return "document.dispatchEvent(new CustomEvent('gale:navigate', { detail: {$safeData} }))";
     }
 

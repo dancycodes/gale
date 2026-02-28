@@ -247,20 +247,10 @@ class GaleServiceProvider extends ServiceProvider
         });
 
         // Resolve the response mode from the Gale-Mode header or config fallback
-        // Priority: Gale-Mode header (case-insensitive) > config('gale.mode') > 'http'
+        // Delegates to GaleResponse::resolveRequestMode() which handles the full priority chain:
+        // Gale-Mode header (case-insensitive) > config('gale.mode') > 'http'
         Request::macro('galeMode', function (): string {
-            $headerMode = $this->header('Gale-Mode');
-
-            if (is_string($headerMode) && $headerMode !== '') {
-                $normalized = strtolower(trim($headerMode));
-
-                if (in_array($normalized, GaleResponse::VALID_MODES, true)) {
-                    return $normalized;
-                }
-            }
-
-            // Fall through to config, then built-in default
-            return GaleResponse::resolveMode();
+            return GaleResponse::resolveRequestMode($this);
         });
 
         // State access macro - retrieves state from request JSON body
