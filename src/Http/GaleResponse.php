@@ -348,6 +348,40 @@ class GaleResponse implements Responsable
     }
 
     /**
+     * Update all components matching a tag with a state patch
+     *
+     * Sends a gale-patch-component event with tag-based targeting instead of
+     * name-based targeting. The frontend resolves the tag to all registered
+     * components with that tag and applies the state patch to each one using
+     * RFC 7386 JSON Merge Patch semantics.
+     *
+     * @param  string  $tag  Tag name to target (from x-component data-tags attribute)
+     * @param  array<string, mixed>  $state  State updates (key-value pairs)
+     * @return static Returns this instance for method chaining
+     */
+    public function tagState(string $tag, array $state): self
+    {
+        /** @phpstan-ignore method.notFound (isGale is a Request macro) */
+        if (! request()->isGale()) {
+            return $this;
+        }
+
+        $dataLines = [];
+        $dataLines[] = "tag {$tag}";
+        $stateJson = json_encode($state);
+        $dataLines[] = "state {$stateJson}";
+
+        $structuredData = [
+            'tag' => $tag,
+            'state' => $state,
+        ];
+
+        $this->handleEvent('gale-patch-component', $dataLines, $structuredData);
+
+        return $this;
+    }
+
+    /**
      * Invoke a method on a named component
      *
      * Sends a gale-invoke-method event to call a method on a component
