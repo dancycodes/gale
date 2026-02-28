@@ -89,6 +89,8 @@ class GaleServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        $this->validateConfig();
+
         if ($this->app->runningInConsole()) {
             $this->commands([
                 \Dancycodes\Gale\Console\InstallCommand::class,
@@ -139,6 +141,36 @@ class GaleServiceProvider extends ServiceProvider
         Blade::if('ifgale', function () {
             return request()->hasHeader('Gale-Request');
         });
+    }
+
+    /**
+     * Validate published Gale configuration values during boot (BR-F028-07, BR-F028-08)
+     *
+     * Checks that config values are within their allowed ranges and types.
+     * Throws InvalidArgumentException immediately during boot for clear, fast failure
+     * rather than silently misbehaving at runtime.
+     *
+     * Validated keys:
+     * - gale.mode: must be 'http' or 'sse'
+     *
+     * Config file not published uses package defaults which are always valid.
+     *
+     * @throws \InvalidArgumentException When a config value is not within its allowed range
+     */
+    private function validateConfig(): void
+    {
+        $allowedModes = ['http', 'sse'];
+        $mode = config('gale.mode');
+
+        if (! in_array($mode, $allowedModes, strict: true)) {
+            throw new \InvalidArgumentException(
+                sprintf(
+                    'Invalid gale.mode value "%s". Allowed: %s',
+                    $mode,
+                    implode(', ', $allowedModes)
+                )
+            );
+        }
     }
 
     /**
