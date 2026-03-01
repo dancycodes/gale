@@ -8,7 +8,7 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
 /**
- * Gale Error Response Handler (F-014)
+ * Gale Error Response Handler (F-014, F-058)
  *
  * Converts unhandled exceptions during Gale requests into structured
  * Gale error responses, preventing raw HTML error pages from being
@@ -21,7 +21,13 @@ use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
  * - 422: Skipped (handled by F-010 ValidationException handler)
  * - All others: Set _error state + dispatch gale:error event
  *
- * Non-Gale requests pass through unchanged.
+ * F-058 additions:
+ * - Debug mode (app.debug=true): includes exception class, file, line, and stack trace
+ * - Production: only generic safe messages — no class names, paths, or traces exposed
+ * - All standard HTTP error codes handled (401, 403, 404, 419, 422, 429, 500, 503)
+ * - Error data uses { error: true, status, message } shape in HTTP mode (BR-F058-02)
+ *
+ * Non-Gale requests pass through unchanged (BR-BR-F058-07).
  */
 class GaleErrorHandler
 {
@@ -38,7 +44,7 @@ class GaleErrorHandler
             return null;
         }
 
-        // Only convert for Gale requests (BR-014.9)
+        // Only convert for Gale requests (BR-014.9, BR-F058-07)
         /** @phpstan-ignore method.notFound (isGale is a Request macro) */
         if (! $request->isGale()) {
             return null;
@@ -46,6 +52,9 @@ class GaleErrorHandler
 
         $status = self::resolveStatusCode($e);
         $message = self::resolveMessage($e, $status);
+
+        // F-058 BR-F058-04/BR-F058-05: Build error detail — stack trace only in debug mode
+        $errorDetail = self::buildErrorDetail($e, $status, $message);
 
         try {
             // 401 Unauthorized: redirect to login (BR-F012-01, BR-F012-02, BR-F012-03)
@@ -65,14 +74,8 @@ class GaleErrorHandler
             // 419 CSRF Token Mismatch: dispatch specific event (BR-014.4)
             if ($status === 419) {
                 $gale = gale()
-                    ->state('_error', [
-                        'status' => $status,
-                        'message' => $message,
-                    ])
-                    ->dispatch('gale:csrf-expired', [
-                        'status' => $status,
-                        'message' => $message,
-                    ]);
+                    ->state('_error', $errorDetail)
+                    ->dispatch('gale:csrf-expired', $errorDetail);
 
                 $response = $gale->toResponse($request);
                 $response->setStatusCode($status);
@@ -81,15 +84,10 @@ class GaleErrorHandler
             }
 
             // All other errors: set _error state + dispatch gale:error (BR-014.1, BR-014.2, BR-014.3)
+            // BR-F058-02: error detail shape { error: true, status, message } (+ trace fields in debug)
             $gale = gale()
-                ->state('_error', [
-                    'status' => $status,
-                    'message' => $message,
-                ])
-                ->dispatch('gale:error', [
-                    'status' => $status,
-                    'message' => $message,
-                ]);
+                ->state('_error', $errorDetail)
+                ->dispatch('gale:error', $errorDetail);
 
             $response = $gale->toResponse($request);
             $response->setStatusCode($status);
@@ -105,6 +103,47 @@ class GaleErrorHandler
                 headers: ['X-Gale-Response' => 'true'],
             );
         }
+    }
+
+    /**
+     * Build the error detail object for the response
+     *
+     * F-058 BR-F058-02: HTTP mode errors return { error: true, status, message }
+     * F-058 BR-F058-04: In debug mode, also include exception class, file, line, trace
+     * F-058 BR-F058-05: Production MUST NOT expose class names, file paths, or stack traces
+     *
+     * @return array<string, mixed>
+     */
+    public static function buildErrorDetail(\Throwable $e, int $status, string $message): array
+    {
+        // Base shape — always safe to expose (BR-F058-02)
+        $detail = [
+            'error' => true,
+            'status' => $status,
+            'message' => $message,
+        ];
+
+        // Debug mode only: expose exception internals for developers (BR-F058-04)
+        // Production: no class names, file paths, or stack traces (BR-F058-05)
+        if (config('app.debug')) {
+            $detail['exception'] = get_class($e);
+            $detail['file'] = $e->getFile();
+            $detail['line'] = $e->getLine();
+
+            // Summarise trace: top 10 frames, each with file, line, function, class
+            // Full raw trace is not sent to avoid excessively large payloads
+            $trace = [];
+            foreach (array_slice($e->getTrace(), 0, 10) as $frame) {
+                $trace[] = [
+                    'file' => $frame['file'] ?? '[internal]',
+                    'line' => $frame['line'] ?? 0,
+                    'function' => ($frame['class'] ?? '').($frame['type'] ?? '').($frame['function'] ?? ''),
+                ];
+            }
+            $detail['trace'] = $trace;
+        }
+
+        return $detail;
     }
 
     /**
@@ -134,7 +173,7 @@ class GaleErrorHandler
      * Priority:
      * 1. HttpException messages from abort() -- developer-defined, always safe
      * 2. Debug mode: expose the actual exception message (BR-014.10)
-     * 3. Production mode: generic safe messages by status code (BR-014.11)
+     * 3. Production mode: generic safe messages by status code (BR-014.11, BR-F058-05)
      */
     public static function resolveMessage(\Throwable $e, int $status): string
     {
@@ -146,18 +185,19 @@ class GaleErrorHandler
             }
         }
 
-        // In debug mode, expose the exception message for developers (BR-014.10)
+        // In debug mode, expose the exception message for developers (BR-014.10, BR-F058-04)
         if (config('app.debug') && ! empty($e->getMessage())) {
             return $e->getMessage();
         }
 
-        // Production mode: use generic messages by status code (BR-014.11)
+        // Production mode: use generic messages by status code (BR-014.11, BR-F058-05)
         return match ($status) {
             400 => 'Bad Request',
             401 => 'Unauthorized',
             403 => 'Forbidden',
             404 => 'Not Found',
             419 => 'Page Expired',
+            422 => 'Unprocessable Content',
             429 => 'Too Many Requests',
             500 => 'Server Error',
             503 => 'Service Unavailable',
