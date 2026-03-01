@@ -3,6 +3,7 @@
 namespace Dancycodes\Gale\Http;
 
 use Closure;
+use Dancycodes\Gale\Security\StateChecksum;
 use Dancycodes\Gale\View\Fragment\BladeFragment;
 use Illuminate\Contracts\Support\Responsable;
 use Illuminate\Http\JsonResponse;
@@ -881,13 +882,18 @@ class GaleResponse implements Responsable
             return $this;
         }
 
-        $dataLines = $this->buildStateEvent($state, $options);
+        // Sign the state payload with HMAC-SHA256 before sending to the client (F-013, BR-013.1)
+        // The checksum is computed over the base state (without _checksum itself) and appended
+        // as the reserved `_checksum` key so it travels with the exact state it signs.
+        $signedState = StateChecksum::sign($state);
+
+        $dataLines = $this->buildStateEvent($signedState, $options);
 
         // Build structured data for JSON serialization (BR-003.5)
-        // State data is the state object directly; onlyIfMissing is included as metadata
-        $structuredData = $state;
+        // State data is the signed state object; onlyIfMissing is included as metadata
+        $structuredData = $signedState;
         if (! empty($options['onlyIfMissing'])) {
-            $structuredData = array_merge(['onlyIfMissing' => true], $state);
+            $structuredData = array_merge(['onlyIfMissing' => true], $signedState);
         }
 
         $this->handleEvent('gale-patch-state', $dataLines, $structuredData);

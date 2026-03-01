@@ -118,6 +118,7 @@ class GaleServiceProvider extends ServiceProvider
         $this->registerRequestMacros();
         $this->registerResponseMacros();
         $this->registerRouteDiscovery();
+        $this->registerMiddlewareAliases();
     }
 
     /**
@@ -518,5 +519,28 @@ class GaleServiceProvider extends ServiceProvider
         });
 
         return $this;
+    }
+
+    /**
+     * Register Gale middleware aliases for use in route definitions
+     *
+     * Registers two aliases that application developers can apply to routes:
+     *
+     * - 'gale.checksum': Alias for VerifyGaleChecksum — explicitly re-apply the
+     *   middleware on API routes or groups not covered by the web group.
+     * - 'gale.without-checksum': Alias for WithoutGaleChecksum — opt a specific
+     *   route out of checksum enforcement (BR-013.9).
+     *
+     * The VerifyGaleChecksum middleware is registered as a global web middleware
+     * via bootstrap/app.php during application setup; these aliases provide
+     * granular per-route control.
+     */
+    private function registerMiddlewareAliases(): void
+    {
+        /** @var \Illuminate\Routing\Router $router */
+        $router = $this->app['router'];
+
+        $router->aliasMiddleware('gale.checksum', \Dancycodes\Gale\Http\Middleware\VerifyGaleChecksum::class);
+        $router->aliasMiddleware('gale.without-checksum', \Dancycodes\Gale\Http\Middleware\WithoutGaleChecksum::class);
     }
 }
