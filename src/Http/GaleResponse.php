@@ -89,6 +89,16 @@ class GaleResponse implements Responsable
     protected bool $etagEnabled = false;
 
     /**
+     * Additional HTTP response headers to include in the final response (F-034)
+     *
+     * Set via withHeaders(). Applied to both JSON (HTTP mode) and SSE responses.
+     * Primary use case: Gale-Cache-Bust header for history cache invalidation.
+     *
+     * @var array<string, string>
+     */
+    protected array $extraHeaders = [];
+
+    /**
      * Valid response modes for Gale
      *
      * @var array<int, string>
@@ -173,6 +183,23 @@ class GaleResponse implements Responsable
         $this->retryDuration = null;
         $this->pendingRedirect = null;
         $this->etagEnabled = false;
+        $this->extraHeaders = [];
+    }
+
+    /**
+     * Set additional HTTP headers to include in the Gale response (F-034)
+     *
+     * Headers are merged into the final response regardless of mode (HTTP or SSE).
+     * Primary use case: Gale-Cache-Bust for history cache invalidation.
+     *
+     * @param  array<string, string>  $headers  Associative array of header name => value
+     * @return static Fluent interface for chaining
+     */
+    public function withHeaders(array $headers): static
+    {
+        $this->extraHeaders = array_merge($this->extraHeaders, $headers);
+
+        return $this;
     }
 
     /**
@@ -1394,10 +1421,10 @@ class GaleResponse implements Responsable
         if ($mode === 'http') {
             // HTTP mode: return JsonResponse with serialized events (BR-004.1, BR-004.6)
             // BR-F027-04: State patches use Cache-Control: no-cache (revalidate, allow conditional)
-            $responseHeaders = [
+            $responseHeaders = array_merge([
                 'X-Gale-Response' => 'true',
                 'Cache-Control' => 'no-cache',
-            ];
+            ], $this->extraHeaders);
 
             // BR-F027-01, BR-F027-08: Add ETag header when opt-in is set
             // BR-F027-10: ETag is never applied to SSE streaming responses (handled above)
@@ -1438,7 +1465,9 @@ class GaleResponse implements Responsable
             $output .= $event;
         }
 
-        return response($output, 200, self::headers());
+        $sseHeaders = array_merge(self::headers(), $this->extraHeaders);
+
+        return response($output, 200, $sseHeaders);
     }
 
     /**
