@@ -1364,6 +1364,7 @@ class GaleResponse implements Responsable
         $webResponse = $this->webResponse;
         $pendingRedirect = $this->pendingRedirect;
         $etagEnabled = $this->etagEnabled || (bool) config('gale.etag', false);
+        $extraHeaders = $this->extraHeaders;
         $this->reset();
 
         // Handle pending redirect from when()/unless() callbacks
@@ -1424,7 +1425,7 @@ class GaleResponse implements Responsable
             $responseHeaders = array_merge([
                 'X-Gale-Response' => 'true',
                 'Cache-Control' => 'no-cache',
-            ], $this->extraHeaders);
+            ], $extraHeaders);
 
             // BR-F027-01, BR-F027-08: Add ETag header when opt-in is set
             // BR-F027-10: ETag is never applied to SSE streaming responses (handled above)
@@ -1465,7 +1466,7 @@ class GaleResponse implements Responsable
             $output .= $event;
         }
 
-        $sseHeaders = array_merge(self::headers(), $this->extraHeaders);
+        $sseHeaders = array_merge(self::headers(), $extraHeaders);
 
         return response($output, 200, $sseHeaders);
     }
