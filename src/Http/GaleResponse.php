@@ -166,10 +166,14 @@ class GaleResponse implements Responsable
     }
 
     /**
-     * Reset the response builder state for reuse
+     * Reset all mutable state on this instance (BR-F030-03, BR-F030-05)
      *
-     * Clears all accumulated events and resets flags to their initial state.
-     * Called automatically after toResponse() to allow singleton reuse across requests.
+     * Clears every accumulated field so the next request starts with a clean slate.
+     * Called from toResponse() in a finally block, guaranteeing cleanup even when
+     * an exception propagates (BR-F030-06). Also called from the StreamedResponse
+     * closure's finally block so SSE streams clean up after completion.
+     *
+     * Safe to call multiple times — idempotent (all assignments are to zero values).
      */
     public function reset(): void
     {
@@ -1508,7 +1512,8 @@ class GaleResponse implements Responsable
     {
         $request = $request ?? request();
 
-        // Capture current state and reset for next request (singleton reuse)
+        // Capture current state into locals — reset() in finally guarantees cleanup
+        // even if an exception is thrown before or during processing (BR-F030-06)
         $events = $this->events;
         $jsonEvents = $this->jsonEvents;
         $streamCallback = $this->streamCallback;
@@ -1516,110 +1521,122 @@ class GaleResponse implements Responsable
         $pendingRedirect = $this->pendingRedirect;
         $etagEnabled = $this->etagEnabled || (bool) config('gale.etag', false);
         $extraHeaders = $this->extraHeaders;
-        $this->reset();
 
-        // Handle pending redirect from when()/unless() callbacks
-        // This takes precedence over other response types
-        if ($pendingRedirect !== null) {
-            return $pendingRedirect->toResponse($request);
-        }
-
-        // Handle non-Gale requests
-        /** @phpstan-ignore method.notFound (isGale is a Request macro) */
-        if (! $request->isGale()) {
-            if ($webResponse === null) {
-                // Return 204 No Content for API routes without web fallback
-                // This makes componentState(), state(), etc. gracefully handle non-Gale requests
-                return response()->noContent();
+        try {
+            // Handle pending redirect from when()/unless() callbacks
+            // This takes precedence over other response types
+            if ($pendingRedirect !== null) {
+                return $pendingRedirect->toResponse($request);
             }
 
-            return is_callable($webResponse)
-                ? ($webResponse)()
-                : $webResponse;
-        }
-
-        // Handle Gale requests — stream() always forces SSE (BR-009.1, BR-009.2, BR-009.3)
-        // Mode resolution is bypassed entirely when streamCallback is set
-        if ($streamCallback) {
-            // Streaming mode: use StreamedResponse for real-time output (BR-009.6)
-            $response = new StreamedResponse(function () use ($streamCallback, $events) {
-                // Close session before streaming begins (BR-009.7)
-                if (session_status() === PHP_SESSION_ACTIVE) {
-                    session_write_close();
+            // Handle non-Gale requests
+            /** @phpstan-ignore method.notFound (isGale is a Request macro) */
+            if (! $request->isGale()) {
+                if ($webResponse === null) {
+                    // Return 204 No Content for API routes without web fallback
+                    // This makes componentState(), state(), etc. gracefully handle non-Gale requests
+                    return response()->noContent();
                 }
 
-                // Allow unlimited execution time for SSE streams (BR-009.8)
-                set_time_limit(0);
-
-                // Restore pre-accumulated events so they are flushed first (BR-009.4)
-                $this->events = $events;
-
-                $this->executeStreamingModeWithCallback($streamCallback);
-            });
-
-            foreach (self::headers() as $name => $value) {
-                $response->headers->set($name, $value);
+                return is_callable($webResponse)
+                    ? ($webResponse)()
+                    : $webResponse;
             }
 
-            // BR-F027-05: SSE streaming responses must never be cached
-            $response->headers->set('Cache-Control', 'no-store');
+            // Handle Gale requests — stream() always forces SSE (BR-009.1, BR-009.2, BR-009.3)
+            // Mode resolution is bypassed entirely when streamCallback is set
+            if ($streamCallback) {
+                // Streaming mode: use StreamedResponse for real-time output (BR-009.6)
+                $response = new StreamedResponse(function () use ($streamCallback, $events) {
+                    try {
+                        // Close session before streaming begins (BR-009.7)
+                        if (session_status() === PHP_SESSION_ACTIVE) {
+                            session_write_close();
+                        }
 
-            return $response;
-        }
+                        // Allow unlimited execution time for SSE streams (BR-009.8)
+                        set_time_limit(0);
 
-        // Resolve mode: Gale-Mode header > config('gale.mode') > 'http' default (BR-004.8)
-        $mode = self::resolveRequestMode($request);
+                        // Restore pre-accumulated events so they are flushed first (BR-009.4)
+                        $this->events = $events;
 
-        if ($mode === 'http') {
-            // HTTP mode: return JsonResponse with serialized events (BR-004.1, BR-004.6)
-            // BR-F027-04: State patches use Cache-Control: no-cache (revalidate, allow conditional)
-            $responseHeaders = array_merge([
-                'X-Gale-Response' => 'true',
-                'Cache-Control' => 'no-cache',
-            ], $extraHeaders);
+                        $this->executeStreamingModeWithCallback($streamCallback);
+                    } finally {
+                        // BR-F030-06: Reset after stream completes so instance is clean
+                        // for the next request in persistent worker environments (Octane)
+                        $this->reset();
+                    }
+                });
 
-            // BR-F027-01, BR-F027-08: Add ETag header when opt-in is set
-            // BR-F027-10: ETag is never applied to SSE streaming responses (handled above)
-            if ($etagEnabled) {
-                $jsonBody = (string) json_encode(
-                    ['events' => $jsonEvents],
-                    JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
+                foreach (self::headers() as $name => $value) {
+                    $response->headers->set($name, $value);
+                }
+
+                // BR-F027-05: SSE streaming responses must never be cached
+                $response->headers->set('Cache-Control', 'no-store');
+
+                return $response;
+            }
+
+            // Resolve mode: Gale-Mode header > config('gale.mode') > 'http' default (BR-004.8)
+            $mode = self::resolveRequestMode($request);
+
+            if ($mode === 'http') {
+                // HTTP mode: return JsonResponse with serialized events (BR-004.1, BR-004.6)
+                // BR-F027-04: State patches use Cache-Control: no-cache (revalidate, allow conditional)
+                $responseHeaders = array_merge([
+                    'X-Gale-Response' => 'true',
+                    'Cache-Control' => 'no-cache',
+                ], $extraHeaders);
+
+                // BR-F027-01, BR-F027-08: Add ETag header when opt-in is set
+                // BR-F027-10: ETag is never applied to SSE streaming responses (handled above)
+                if ($etagEnabled) {
+                    $jsonBody = (string) json_encode(
+                        ['events' => $jsonEvents],
+                        JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
+                    );
+
+                    // Generate ETag from MD5 hash of the response body (weak ETag with W/ prefix)
+                    $etag = '"'.md5($jsonBody).'"';
+                    $responseHeaders['ETag'] = $etag;
+
+                    // BR-F027-03: Return 304 Not Modified when If-None-Match header matches
+                    // BR-F027-09: 304 responses are not errors — they are a successful cache hit
+                    $ifNoneMatch = $request->header('If-None-Match');
+
+                    if ($ifNoneMatch !== null && $ifNoneMatch === $etag) {
+                        return response('', 304, [
+                            'ETag' => $etag,
+                            'X-Gale-Response' => 'true',
+                            'Cache-Control' => 'no-cache',
+                        ]);
+                    }
+                }
+
+                return new JsonResponse(
+                    data: ['events' => $jsonEvents],
+                    status: 200,
+                    headers: $responseHeaders,
+                    json: false,
                 );
-
-                // Generate ETag from MD5 hash of the response body (weak ETag with W/ prefix)
-                $etag = '"'.md5($jsonBody).'"';
-                $responseHeaders['ETag'] = $etag;
-
-                // BR-F027-03: Return 304 Not Modified when If-None-Match header matches
-                // BR-F027-09: 304 responses are not errors — they are a successful cache hit
-                $ifNoneMatch = $request->header('If-None-Match');
-
-                if ($ifNoneMatch !== null && $ifNoneMatch === $etag) {
-                    return response('', 304, [
-                        'ETag' => $etag,
-                        'X-Gale-Response' => 'true',
-                        'Cache-Control' => 'no-cache',
-                    ]);
-                }
             }
 
-            return new JsonResponse(
-                data: ['events' => $jsonEvents],
-                status: 200,
-                headers: $responseHeaders,
-                json: false,
-            );
+            // SSE mode: use regular Response (works better with test environments) (BR-004.2)
+            $output = ": keepalive\n\n";
+            foreach ($events as $event) {
+                $output .= $event;
+            }
+
+            $sseHeaders = array_merge(self::headers(), $extraHeaders);
+
+            return response($output, 200, $sseHeaders);
+        } finally {
+            // BR-F030-06: Guarantee state reset even if an exception is thrown
+            // during response building. This safety net ensures no state bleeds
+            // into the next request in persistent worker environments (Octane).
+            $this->reset();
         }
-
-        // SSE mode: use regular Response (works better with test environments) (BR-004.2)
-        $output = ": keepalive\n\n";
-        foreach ($events as $event) {
-            $output .= $event;
-        }
-
-        $sseHeaders = array_merge(self::headers(), $extraHeaders);
-
-        return response($output, 200, $sseHeaders);
     }
 
     /**

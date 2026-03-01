@@ -58,12 +58,16 @@ class GaleServiceProvider extends ServiceProvider
     {
         require_once __DIR__.'/helpers.php';
 
-        // Use scoped() to ensure a fresh GaleResponse instance per request
+        // Use scoped() to ensure a fresh GaleResponse instance per request.
         // This prevents state corruption across multiple requests in the same process
-        // (e.g., in testing or PHP-FPM worker reuse)
-        $this->app->scoped('gale.response', function ($app) {
+        // (e.g., in Octane/Swoole/RoadRunner or PHP-FPM worker reuse).
+        // BR-F030-01: scoped binding gives a fresh instance per request lifecycle.
+        // Both the string alias and the class name resolve the same scoped instance.
+        $this->app->scoped(\Dancycodes\Gale\Http\GaleResponse::class, function () {
             return new \Dancycodes\Gale\Http\GaleResponse;
         });
+
+        $this->app->alias(\Dancycodes\Gale\Http\GaleResponse::class, 'gale.response');
 
         $this->mergeConfigFrom(
             __DIR__.'/../config/gale.php',
@@ -238,6 +242,7 @@ class GaleServiceProvider extends ServiceProvider
     public function provides(): array
     {
         return [
+            \Dancycodes\Gale\Http\GaleResponse::class,
             'gale.response',
         ];
     }
