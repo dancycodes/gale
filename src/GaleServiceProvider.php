@@ -141,9 +141,23 @@ class GaleServiceProvider extends ServiceProvider
      */
     private function registerBladeDirectives(): void
     {
-        // Include Alpine + Gale bundle with CSRF meta tag and transition styles
+        // Include Alpine + Gale bundle with CSRF meta tag, transition styles,
+        // and optional debug mode flag (F-071: only injected when APP_DEBUG=true).
+        // BR-F071-01/08: Debug panel JS is only activated in development mode.
+        // window.GALE_DEBUG_MODE is read by debug.js as a secondary runtime guard.
         Blade::directive('gale', function () {
-            return "<?php echo '<meta name=\"csrf-token\" content=\"' . csrf_token() . '\">' . chr(10) . '<link rel=\"stylesheet\" href=\"' . asset('vendor/gale/css/gale.css') . '\">' . chr(10) . '<script type=\"module\" src=\"' . asset('vendor/gale/js/gale.js') . '\"></script>'; ?>";
+            return <<<'PHP'
+<?php
+    $__galeDebugScript = config('app.debug')
+        ? '<script>window.GALE_DEBUG_MODE=true;</script>' . chr(10)
+        : '';
+    echo '<meta name="csrf-token" content="' . csrf_token() . '">' . chr(10)
+        . $__galeDebugScript
+        . '<link rel="stylesheet" href="' . asset('vendor/gale/css/gale.css') . '">' . chr(10)
+        . '<script type="module" src="' . asset('vendor/gale/js/gale.js') . '"></script>';
+    unset($__galeDebugScript);
+?>
+PHP;
         });
 
         // Inject initial state for Alpine x-data (deprecated, use x-data directly)
