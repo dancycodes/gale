@@ -80,6 +80,15 @@ class GaleResponse implements Responsable
     protected ?GaleRedirect $pendingRedirect = null;
 
     /**
+     * Whether ETag-based conditional response is enabled for this response (BR-F027-08)
+     *
+     * When true, toResponse() generates an ETag header from the response content hash
+     * and returns 304 Not Modified when the client's If-None-Match header matches.
+     * Opt-in per endpoint via gale()->etag() or globally via config('gale.etag').
+     */
+    protected bool $etagEnabled = false;
+
+    /**
      * Valid response modes for Gale
      *
      * @var array<int, string>
@@ -163,6 +172,7 @@ class GaleResponse implements Responsable
         $this->eventId = null;
         $this->retryDuration = null;
         $this->pendingRedirect = null;
+        $this->etagEnabled = false;
     }
 
     /**
@@ -177,7 +187,8 @@ class GaleResponse implements Responsable
     public static function headers(): array
     {
         $headers = [
-            'Cache-Control' => 'no-cache',
+            // BR-F027-05: SSE streaming responses must never be cached
+            'Cache-Control' => 'no-store',
             'Content-Type' => 'text/event-stream',
             'X-Accel-Buffering' => 'no',
             'X-Gale-Response' => 'true',
@@ -221,6 +232,27 @@ class GaleResponse implements Responsable
     public function withRetry(int $milliseconds): self
     {
         $this->retryDuration = $milliseconds;
+
+        return $this;
+    }
+
+    /**
+     * Enable ETag-based conditional response for this endpoint (BR-F027-08)
+     *
+     * When enabled, toResponse() generates an ETag header from a hash of the response
+     * content. If the client sends an If-None-Match header that matches the ETag, the
+     * server returns 304 Not Modified with an empty body, saving bandwidth.
+     *
+     * ETag is opt-in because:
+     * - Non-idempotent endpoints with side effects should not serve 304 responses
+     * - Static fragments that rarely change are the ideal use case
+     * - ETag is NEVER applied to SSE streaming responses (BR-F027-10)
+     *
+     * @return static Returns this instance for method chaining
+     */
+    public function etag(): self
+    {
+        $this->etagEnabled = true;
 
         return $this;
     }
@@ -1304,6 +1336,7 @@ class GaleResponse implements Responsable
         $streamCallback = $this->streamCallback;
         $webResponse = $this->webResponse;
         $pendingRedirect = $this->pendingRedirect;
+        $etagEnabled = $this->etagEnabled || (bool) config('gale.etag', false);
         $this->reset();
 
         // Handle pending redirect from when()/unless() callbacks
@@ -1349,6 +1382,9 @@ class GaleResponse implements Responsable
                 $response->headers->set($name, $value);
             }
 
+            // BR-F027-05: SSE streaming responses must never be cached
+            $response->headers->set('Cache-Control', 'no-store');
+
             return $response;
         }
 
@@ -1357,12 +1393,41 @@ class GaleResponse implements Responsable
 
         if ($mode === 'http') {
             // HTTP mode: return JsonResponse with serialized events (BR-004.1, BR-004.6)
+            // BR-F027-04: State patches use Cache-Control: no-cache (revalidate, allow conditional)
+            $responseHeaders = [
+                'X-Gale-Response' => 'true',
+                'Cache-Control' => 'no-cache',
+            ];
+
+            // BR-F027-01, BR-F027-08: Add ETag header when opt-in is set
+            // BR-F027-10: ETag is never applied to SSE streaming responses (handled above)
+            if ($etagEnabled) {
+                $jsonBody = (string) json_encode(
+                    ['events' => $jsonEvents],
+                    JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
+                );
+
+                // Generate ETag from MD5 hash of the response body (weak ETag with W/ prefix)
+                $etag = '"'.md5($jsonBody).'"';
+                $responseHeaders['ETag'] = $etag;
+
+                // BR-F027-03: Return 304 Not Modified when If-None-Match header matches
+                // BR-F027-09: 304 responses are not errors — they are a successful cache hit
+                $ifNoneMatch = $request->header('If-None-Match');
+
+                if ($ifNoneMatch !== null && $ifNoneMatch === $etag) {
+                    return response('', 304, [
+                        'ETag' => $etag,
+                        'X-Gale-Response' => 'true',
+                        'Cache-Control' => 'no-cache',
+                    ]);
+                }
+            }
+
             return new JsonResponse(
                 data: ['events' => $jsonEvents],
                 status: 200,
-                headers: [
-                    'X-Gale-Response' => 'true',
-                ],
+                headers: $responseHeaders,
                 json: false,
             );
         }
