@@ -48,13 +48,18 @@ class GaleErrorHandler
         $message = self::resolveMessage($e, $status);
 
         try {
-            // 401 Unauthorized: redirect to login (spec: Error Categories table)
+            // 401 Unauthorized: redirect to login (BR-F012-01, BR-F012-02, BR-F012-03)
+            // For HTTP mode: gale()->redirect() produces a JSON response containing a JS redirect
+            //   event — 200 status is correct so the frontend processes the event body.
+            // For SSE mode: gale()->redirect() produces a text/event-stream response — SSE
+            //   requires a 200 status to establish the event stream; setting 401 would cause
+            //   the browser's EventSource/fetch to reject the connection before any events arrive.
+            // In both cases the login URL is encoded in the response body/events, so the frontend
+            //   navigates to login without needing a 401 HTTP status code.
             if ($status === 401) {
                 $loginUrl = config('gale.login_url', '/login');
-                $response = gale()->redirect($loginUrl)->toResponse($request);
-                $response->setStatusCode(401);
 
-                return $response;
+                return gale()->redirect($loginUrl)->toResponse($request);
             }
 
             // 419 CSRF Token Mismatch: dispatch specific event (BR-014.4)
