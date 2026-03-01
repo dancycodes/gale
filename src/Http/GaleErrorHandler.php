@@ -72,10 +72,12 @@ class GaleErrorHandler
             }
 
             // 419 CSRF Token Mismatch: dispatch specific event (BR-014.4)
+            // F-058: Also dispatch gale:error so inline error banner can display
             if ($status === 419) {
                 $gale = gale()
                     ->state('_error', $errorDetail)
-                    ->dispatch('gale:csrf-expired', $errorDetail);
+                    ->dispatch('gale:csrf-expired', $errorDetail)
+                    ->dispatch('gale:error', $errorDetail);
 
                 $response = $gale->toResponse($request);
                 $response->setStatusCode($status);

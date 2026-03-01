@@ -1524,12 +1524,16 @@ class GaleResponse implements Responsable
                 $this->validateAndFlushStreamBuffer();
 
             } catch (\Throwable $e) {
-                // Drain the output buffer before delegating to the exception handler
+                // Drain the output buffer before emitting the error event
                 // to prevent captured raw output from leaking into the SSE stream
                 if (ob_get_level()) {
                     ob_end_clean();
                 }
-                $this->handleNativeException($e);
+                // F-058 BR-F058-03: SSE stream exceptions emit a gale-error event and
+                // close the stream — the page layout is NOT replaced. This keeps the
+                // frontend component tree intact and lets the gale:error handler display
+                // the error inline without a full-page replacement.
+                $this->emitSseErrorEvent($e);
             } finally {
                 // Clean up any remaining buffer (e.g. from HTML-format dd/dump output)
                 $this->handleStreamOutput();
@@ -1809,6 +1813,25 @@ class GaleResponse implements Responsable
     protected function restoreOriginalHandlers(): void
     {
         app()->forgetInstance('redirect');
+    }
+
+    /**
+     * Emit a gale-error SSE event for an exception thrown inside stream() (F-058 BR-F058-03)
+     *
+     * Emits a structured gale-error SSE event so the frontend can display the error inline
+     * without replacing the page. In debug mode, includes exception class, file, line, and
+     * a condensed stack trace. In production, only the generic message is included.
+     *
+     * @param  \Throwable  $e  Exception thrown inside the stream callback
+     */
+    protected function emitSseErrorEvent(\Throwable $e): void
+    {
+        $status = GaleErrorHandler::resolveStatusCode($e);
+        $message = GaleErrorHandler::resolveMessage($e, $status);
+        $errorDetail = GaleErrorHandler::buildErrorDetail($e, $status, $message);
+
+        echo "event: gale-error\n";
+        echo 'data: '.json_encode($errorDetail)."\n\n";
     }
 
     /**
