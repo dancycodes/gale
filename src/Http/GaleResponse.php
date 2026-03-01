@@ -80,6 +80,16 @@ class GaleResponse implements Responsable
     protected ?GaleRedirect $pendingRedirect = null;
 
     /**
+     * Accumulated flash data from flash() calls (F-061)
+     *
+     * Flushed as a `_flash` state patch event in toResponse() so all flash()
+     * calls in a single request are batched into one state event (BR-F061-07).
+     *
+     * @var array<string, mixed>
+     */
+    protected array $pendingFlash = [];
+
+    /**
      * Whether ETag-based conditional response is enabled for this response (BR-F027-08)
      *
      * When true, toResponse() generates an ETag header from the response content hash
@@ -188,6 +198,7 @@ class GaleResponse implements Responsable
         $this->pendingRedirect = null;
         $this->etagEnabled = false;
         $this->extraHeaders = [];
+        $this->pendingFlash = [];
     }
 
     /**
@@ -578,6 +589,69 @@ class GaleResponse implements Responsable
     public function clearMessages(): self
     {
         return $this->state('messages', []);
+    }
+
+    /**
+     * Deliver session flash data to the frontend as reactive state (F-061)
+     *
+     * Stores data in the Laravel session as flash (available for next request) AND
+     * delivers it immediately to the frontend as `_flash` state so the current response
+     * can also display it reactively. This satisfies BR-F061-06: flash data must be
+     * delivered to the frontend in a structured format for display.
+     *
+     * Accepts either a key-value pair or an associative array of flash values.
+     * Multiple calls accumulate into the same `_flash` state object (BR-F061-07).
+     *
+     * Flash data is consumed after being read on the next request (BR-F061-04).
+     * Works in both HTTP and SSE transport modes (BR-F061-08).
+     *
+     * Examples:
+     *   gale()->flash('success', 'Record saved!')
+     *   gale()->flash('warning', 'Please review')
+     *   gale()->flash(['status' => 'updated', 'count' => 5])
+     *   gale()->flash('success', 'Saved')->state('count', 42)
+     *
+     * Frontend display (add _flash to x-data):
+     *   <div x-show="_flash.success" x-text="_flash.success"></div>
+     *
+     * @param  string|array<string, mixed>  $key  Flash key or associative array of flash data
+     * @param  mixed  $value  Flash value when $key is string, ignored when $key is array
+     * @return static Returns this instance for method chaining
+     */
+    public function flash(string|array $key, mixed $value = null): self
+    {
+        /** @phpstan-ignore method.notFound (isGale is a Request macro) */
+        if (! request()->isGale()) {
+            // For non-Gale requests: still flash to session so server-rendered pages
+            // can display the flash data via session('key') or $errors
+            if (is_array($key)) {
+                foreach ($key as $k => $v) {
+                    session()->flash((string) $k, $v);
+                }
+            } else {
+                session()->flash($key, $value);
+            }
+
+            return $this;
+        }
+
+        // Normalize to array
+        /** @var array<string, mixed> $flashData */
+        $flashData = is_array($key) ? $key : [$key => $value];
+
+        // 1. Store in Laravel session as flash — available for the NEXT request (BR-F061-01)
+        foreach ($flashData as $k => $v) {
+            session()->flash((string) $k, $v);
+        }
+
+        // 2. Deliver immediately as `_flash` state patch — current response can display it
+        // (BR-F061-06: structured format for display)
+        // We accumulate into the pending flash state rather than sending multiple state events
+        $existingFlash = $this->pendingFlash;
+        $mergedFlash = array_merge($existingFlash, $flashData);
+        $this->pendingFlash = $mergedFlash;
+
+        return $this;
     }
 
     /**
@@ -1121,10 +1195,10 @@ class GaleResponse implements Responsable
      *
      * Chainable: `gale()->download($path, 'report.pdf')->patchState(['lastExport' => now()])`
      *
-     * @param  string  $pathOrContent   Absolute filesystem path OR raw file content string
-     * @param  string  $filename        Download filename presented to the browser
-     * @param  string|null  $mimeType   Optional MIME type (auto-detected from extension when null)
-     * @param  bool  $isContent        True when $pathOrContent is raw content, not a file path
+     * @param  string  $pathOrContent  Absolute filesystem path OR raw file content string
+     * @param  string  $filename  Download filename presented to the browser
+     * @param  string|null  $mimeType  Optional MIME type (auto-detected from extension when null)
+     * @param  bool  $isContent  True when $pathOrContent is raw content, not a file path
      * @return static Returns this instance for method chaining
      *
      * @throws \InvalidArgumentException When a file path does not exist
@@ -1206,10 +1280,10 @@ class GaleResponse implements Responsable
      * with a short TTL, keyed by a random token. The token is then signed with the app key
      * so it cannot be guessed or forged.
      *
-     * @param  string  $filename    Sanitized filename for the download
+     * @param  string  $filename  Sanitized filename for the download
      * @param  string|null  $mimeType  MIME type (null = auto-detect)
-     * @param  string|null  $path    Absolute path to the file on disk
-     * @param  string|null  $content Raw file content (for dynamic downloads)
+     * @param  string|null  $path  Absolute path to the file on disk
+     * @param  string|null  $content  Raw file content (for dynamic downloads)
      * @return string Signed opaque token
      */
     protected function buildDownloadToken(
@@ -1712,6 +1786,10 @@ class GaleResponse implements Responsable
     {
         $request = $request ?? request();
 
+        // Flush any pending flash data as a _flash state event before capturing locals (F-061)
+        // This ensures all flash() calls in the request are batched into one state patch.
+        $this->flushPendingFlash();
+
         // Capture current state into locals — reset() in finally guarantees cleanup
         // even if an exception is thrown before or during processing (BR-F030-06)
         $events = $this->events;
@@ -1837,6 +1915,58 @@ class GaleResponse implements Responsable
             // into the next request in persistent worker environments (Octane).
             $this->reset();
         }
+    }
+
+    /**
+     * Flush accumulated flash() data as a `_flash` state patch event (F-061)
+     *
+     * Called once in toResponse() before capturing locals, so all flash() calls
+     * in the request are collapsed into a single gale-patch-state event with the
+     * reserved `_flash` key (BR-F061-07). If no flash data is pending, this is a no-op.
+     *
+     * The `_flash` state key is reserved for Gale flash data. Components add `_flash: {}`
+     * to their x-data and use `x-show="_flash.success"` to display flash messages.
+     *
+     * Also picks up session flash data set via session()->flash() directly in controller
+     * code, making that data available to the frontend in the SAME response (BR-F061-01).
+     * Flash keys are read from the session's `_flash.new` list (keys queued for next request).
+     */
+    protected function flushPendingFlash(): void
+    {
+        /** @phpstan-ignore method.notFound (isGale is a Request macro) */
+        if (! request()->isGale()) {
+            return;
+        }
+
+        // Collect flash data from the explicit flash() API calls on this instance
+        $flashData = $this->pendingFlash;
+
+        // Also pick up any session flash data set directly via session()->flash() this request.
+        // Laravel's session tracks newly flashed keys in session('_flash.new').
+        $sessionFlashKeys = session()->get('_flash.new', []);
+
+        if (is_array($sessionFlashKeys)) {
+            foreach ($sessionFlashKeys as $flashKey) {
+                // Only include if not already set via the flash() API (API takes precedence)
+                if (! isset($flashData[$flashKey])) {
+                    $flashValue = session()->get((string) $flashKey);
+
+                    if ($flashValue !== null) {
+                        $flashData[(string) $flashKey] = $flashValue;
+                    }
+                }
+            }
+        }
+
+        if (empty($flashData)) {
+            return;
+        }
+
+        // Inject as _flash state — uses patchState which signs the payload (F-013)
+        $this->patchState(['_flash' => $flashData]);
+
+        // Clear pending flash — session flash remains for the next request (BR-F061-04)
+        $this->pendingFlash = [];
     }
 
     /**
