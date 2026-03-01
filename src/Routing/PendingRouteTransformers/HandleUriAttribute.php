@@ -2,6 +2,7 @@
 
 namespace Dancycodes\Gale\Routing\PendingRouteTransformers;
 
+use Dancycodes\Gale\Routing\Attributes\Group;
 use Dancycodes\Gale\Routing\Attributes\Prefix;
 use Dancycodes\Gale\Routing\Attributes\Route;
 use Dancycodes\Gale\Routing\PendingRoutes\PendingRoute;
@@ -40,12 +41,19 @@ class HandleUriAttribute implements PendingRouteTransformer
     {
         $pendingRoutes->each(function (PendingRoute $pendingRoute) {
             // Determine the controller-level base URI.
-            // After HandlePrefixAttribute runs, the action URIs start with the prefix.
-            // We resolve the effective controller base to know what to keep.
+            // After HandlePrefixAttribute / HandleGroupAttribute runs, the action URIs
+            // start with the declared prefix. We resolve the effective controller base
+            // to know what to keep when applying a custom method URI segment.
             $prefixAttribute = $pendingRoute->getAttribute(Prefix::class);
-            $controllerBase = $prefixAttribute instanceof Prefix
-                ? trim($prefixAttribute->prefix, '/')
-                : $pendingRoute->uri;
+            $groupAttribute = $pendingRoute->getAttribute(Group::class);
+
+            if ($prefixAttribute instanceof Prefix) {
+                $controllerBase = trim($prefixAttribute->prefix, '/');
+            } elseif ($groupAttribute instanceof Group && $groupAttribute->prefix !== null) {
+                $controllerBase = trim($groupAttribute->prefix, '/');
+            } else {
+                $controllerBase = $pendingRoute->uri;
+            }
 
             $pendingRoute->actions->each(function (PendingRouteAction $action) use ($controllerBase) {
                 $routeAttribute = $action->getRouteAttribute();

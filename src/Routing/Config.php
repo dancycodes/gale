@@ -8,6 +8,8 @@ use Dancycodes\Gale\Routing\PendingRouteTransformers\HandleConventionBasedDiscov
 use Dancycodes\Gale\Routing\PendingRouteTransformers\HandleDomainAttribute;
 use Dancycodes\Gale\Routing\PendingRouteTransformers\HandleDoNotDiscoverAttribute;
 use Dancycodes\Gale\Routing\PendingRouteTransformers\HandleFullUriAttribute;
+use Dancycodes\Gale\Routing\PendingRouteTransformers\HandleGroupAttribute;
+use Dancycodes\Gale\Routing\PendingRouteTransformers\HandleGroupNamePrefix;
 use Dancycodes\Gale\Routing\PendingRouteTransformers\HandleHttpMethodsAttribute;
 use Dancycodes\Gale\Routing\PendingRouteTransformers\HandleMiddlewareAttribute;
 use Dancycodes\Gale\Routing\PendingRouteTransformers\HandlePrefixAttribute;
@@ -33,6 +35,7 @@ class Config
             HandleDoNotDiscoverAttribute::class,
             AddControllerUriToActions::class,
             HandlePrefixAttribute::class,
+            HandleGroupAttribute::class,
             HandleUrisOfNestedControllers::class,
             HandleRouteNameAttribute::class,
             HandleMiddlewareAttribute::class,
@@ -42,6 +45,7 @@ class Config
             HandleWithTrashedAttribute::class,
             HandleWheresAttribute::class,
             AddDefaultRouteName::class,
+            HandleGroupNamePrefix::class,
             HandleDomainAttribute::class,
             ValidateOptionalParameters::class,
             MoveRoutesStartingWithParametersLast::class,
