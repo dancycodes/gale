@@ -229,6 +229,51 @@ class GaleResponse implements Responsable
     }
 
     /**
+     * Inject VarDumper HTML output as a gale-debug-dump event (F-057)
+     *
+     * Called by GaleDumpInterceptMiddleware when dump() or dd() output is captured
+     * during a Gale request. Sends the raw VarDumper HTML to the frontend where
+     * it is rendered in a dismissible debug overlay.
+     *
+     * The event carries the complete VarDumper HTML including inline styles and
+     * JavaScript so collapsible dump nodes work correctly in the overlay (BR-057.3).
+     *
+     * Multiple calls accumulate as separate events — each dump() call appears as
+     * a separate entry in the overlay (BR-057.6).
+     *
+     * Only active when config('gale.debug') is true (BR-057.7). The middleware
+     * guards against this before calling this method, but the guard here provides
+     * defense-in-depth.
+     *
+     * @param  string  $html  Raw VarDumper HTML from output buffer capture
+     * @return static Returns this instance for method chaining
+     */
+    public function debugDump(string $html): self
+    {
+        if (! config('gale.debug', false)) {
+            return $this;
+        }
+
+        /** @phpstan-ignore method.notFound (isGale is a Request macro) */
+        if (! request()->isGale()) {
+            return $this;
+        }
+
+        // Build SSE data line: base64-encode HTML to avoid SSE line-break issues
+        $encoded = base64_encode($html);
+        $dataLines = ["html {$encoded}"];
+
+        // Build structured data for JSON serialization (HTTP mode)
+        $structuredData = [
+            'html' => $html,
+        ];
+
+        $this->handleEvent('gale-debug-dump', $dataLines, $structuredData);
+
+        return $this;
+    }
+
+    /**
      * Register a before-hook that runs before the controller builds a GaleResponse (F-064)
      *
      * The hook receives the current Request. Multiple hooks run in registration order.

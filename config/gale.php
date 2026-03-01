@@ -80,6 +80,21 @@ return [
 
     'morph_markers' => env('GALE_MORPH_MARKERS', true),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Debug Mode (F-057)
+    |--------------------------------------------------------------------------
+    |
+    | When enabled, Gale intercepts dd() and dump() output during Gale requests
+    | and renders it in a debug overlay panel instead of corrupting the JSON or
+    | SSE response. Set to false in production to avoid the output buffer overhead.
+    |
+    | When false, dd() and dump() output will corrupt Gale responses as usual.
+    |
+    */
+
+    'debug' => env('GALE_DEBUG', false),
+
     'route_discovery' => [
         'enabled' => false,  // Opt-in by default
 
