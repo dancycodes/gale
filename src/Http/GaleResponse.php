@@ -644,12 +644,18 @@ class GaleResponse implements Responsable
             session()->flash((string) $k, $v);
         }
 
-        // 2. Deliver immediately as `_flash` state patch — current response can display it
-        // (BR-F061-06: structured format for display)
-        // We accumulate into the pending flash state rather than sending multiple state events
-        $existingFlash = $this->pendingFlash;
-        $mergedFlash = array_merge($existingFlash, $flashData);
-        $this->pendingFlash = $mergedFlash;
+        // 2. Deliver to the frontend as `_flash` state (BR-F061-06: structured format for display)
+        if ($this->streamingMode) {
+            // In streaming mode: emit immediately as a state patch merged with any prior _flash
+            // (BR-F061-08: works in SSE transport mode; same as other state methods in streaming)
+            $mergedFlash = array_merge($this->pendingFlash, $flashData);
+            $this->pendingFlash = [];
+            $this->patchState(['_flash' => $mergedFlash]);
+        } else {
+            // In normal mode: accumulate — flushed as a single _flash state event in toResponse()
+            // (BR-F061-07: multiple flash() calls are batched into one state event)
+            $this->pendingFlash = array_merge($this->pendingFlash, $flashData);
+        }
 
         return $this;
     }
