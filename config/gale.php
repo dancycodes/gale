@@ -37,6 +37,29 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Redirect Allowed Domains
+    |--------------------------------------------------------------------------
+    |
+    | An optional list of domains (and wildcard patterns) that are explicitly
+    | whitelisted for use with GaleRedirect::back() and GaleRedirect::intended().
+    |
+    | When this list is non-empty, a previous/intended URL whose host matches any
+    | entry is accepted without further registrable-domain comparison.
+    |
+    | Supports:
+    |   - Exact hostnames:  'example.com', 'app.example.com'
+    |   - Wildcard prefix:  '*.example.com' (matches any subdomain AND the bare domain)
+    |
+    | When the list is empty (default), Gale falls back to registrable-domain
+    | comparison (last two DNS labels), which accepts subdomain relationships such
+    | as api.example.com ↔ app.example.com automatically.
+    |
+    */
+
+    'redirect_allowed_domains' => [],
+
+    /*
+    |--------------------------------------------------------------------------
     | Blade Morph Markers (F-048)
     |--------------------------------------------------------------------------
     |

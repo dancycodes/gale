@@ -205,6 +205,11 @@ class GaleRedirect implements Responsable
      * current URL, and belongs to same domain for security. Falls back to provided URL if any
      * validation fails or if previous URL is external.
      *
+     * Domain comparison is performed with normalization: case-insensitive (RFC 4343), port
+     * stripping, and registrable-domain subdomain matching. An optional
+     * `gale.redirect_allowed_domains` config key can whitelist additional domains or patterns
+     * (supports `*.example.com` wildcards).
+     *
      * @param string $fallback Fallback URL when no valid previous URL available
      *
      * @return static Returns this instance for method chaining
@@ -220,10 +225,10 @@ class GaleRedirect implements Responsable
         ) {
             $this->url = (string) url($fallback);
         } else {
-            $previousDomain = parse_url((string) $previousUrl, PHP_URL_HOST);
-            $currentDomain = parse_url((string) request()->url(), PHP_URL_HOST);
+            $previousHost = parse_url((string) $previousUrl, PHP_URL_HOST);
+            $currentHost = parse_url((string) request()->url(), PHP_URL_HOST);
 
-            if ($previousDomain === $currentDomain) {
+            if ($previousHost !== false && $currentHost !== false && $this->isSameDomain((string) $previousHost, (string) $currentHost)) {
                 $this->url = $previousUrl;
             } else {
                 $this->url = (string) url($fallback);
@@ -231,6 +236,132 @@ class GaleRedirect implements Responsable
         }
 
         return $this;
+    }
+
+    /**
+     * Determine whether two hosts belong to the same domain for redirect safety
+     *
+     * Performs normalised comparison:
+     * 1. Lowercases both hosts (RFC 4343 — DNS is case-insensitive)
+     * 2. Strips port numbers if present (e.g. `example.com:8080` → `example.com`)
+     * 3. Checks explicit `gale.redirect_allowed_domains` whitelist (wildcard `*.example.com`
+     *    supported) before falling back to registrable-domain comparison
+     * 4. Compares registrable domains (last two labels) so subdomains like `api.example.com`
+     *    and `app.example.com` are treated as same-site
+     *
+     * IPv4/IPv6 addresses bypass the registrable-domain logic and use exact matching only.
+     *
+     * @param string $host1 First hostname (may include port)
+     * @param string $host2 Second hostname (may include port)
+     *
+     * @return bool True when the two hosts are considered the same domain
+     */
+    protected function isSameDomain(string $host1, string $host2): bool
+    {
+        $host1 = strtolower($this->stripPort($host1));
+        $host2 = strtolower($this->stripPort($host2));
+
+        // Exact match after normalisation
+        if ($host1 === $host2) {
+            return true;
+        }
+
+        // Check against explicit allowed-domains whitelist from config
+        /** @var array<int, string> $allowedDomains */
+        $allowedDomains = config('gale.redirect_allowed_domains', []);
+
+        if (!empty($allowedDomains)) {
+            foreach ($allowedDomains as $pattern) {
+                $pattern = strtolower((string) $pattern);
+
+                if (str_starts_with($pattern, '*.')) {
+                    // Wildcard: *.example.com matches sub.example.com and example.com
+                    $base = substr($pattern, 2);
+
+                    if ($host1 === $base || str_ends_with($host1, '.' . $base)) {
+                        return true;
+                    }
+                } elseif ($host1 === $pattern) {
+                    return true;
+                }
+            }
+        }
+
+        // Registrable-domain comparison: skip for bare IP addresses
+        if ($this->isIpAddress($host1) || $this->isIpAddress($host2)) {
+            return false;
+        }
+
+        return $this->getRegistrableDomain($host1) === $this->getRegistrableDomain($host2);
+    }
+
+    /**
+     * Strip port number from a host string
+     *
+     * `parse_url($url, PHP_URL_HOST)` normally excludes ports, but when a host string
+     * is extracted and re-used it may still contain a colon-port suffix.
+     *
+     * @param string $host Host string, optionally suffixed with `:port`
+     *
+     * @return string Host without port
+     */
+    protected function stripPort(string $host): string
+    {
+        // IPv6 addresses are wrapped in brackets: [::1]:8080
+        if (str_starts_with($host, '[')) {
+            $bracketEnd = strrpos($host, ']');
+
+            return $bracketEnd !== false ? substr($host, 0, $bracketEnd + 1) : $host;
+        }
+
+        $colonPos = strrpos($host, ':');
+
+        if ($colonPos !== false) {
+            return substr($host, 0, $colonPos);
+        }
+
+        return $host;
+    }
+
+    /**
+     * Determine whether a host string is an IP address (IPv4 or IPv6)
+     *
+     * @param string $host Normalised host string (no port, lowercased)
+     *
+     * @return bool True when the string is a valid IP address
+     */
+    protected function isIpAddress(string $host): bool
+    {
+        // IPv6 addresses may be wrapped in brackets after stripPort
+        $bare = trim($host, '[]');
+
+        return filter_var($bare, FILTER_VALIDATE_IP) !== false;
+    }
+
+    /**
+     * Extract the registrable domain (eTLD+1) from a hostname
+     *
+     * Uses the last two dot-separated labels as a simple approximation. This works
+     * correctly for common TLDs (`.com`, `.net`, `.org`, etc.) and single-label
+     * TLDs. For multi-part TLDs (`.co.uk`, `.com.au`) the comparison may be more
+     * permissive than a full PSL lookup, but it is a safe default — it will never
+     * reject a valid same-site pair, though it may permit a `.co.uk` match between
+     * unrelated registrants. A full PSL implementation can be substituted by
+     * replacing this method.
+     *
+     * @param string $host Normalised hostname (lowercase, no port)
+     *
+     * @return string Registrable domain (last two labels, e.g. `example.com`)
+     */
+    protected function getRegistrableDomain(string $host): string
+    {
+        $labels = explode('.', $host);
+
+        if (count($labels) <= 2) {
+            return $host;
+        }
+
+        return implode('.', array_slice($labels, -2));
     }
 
     /**
@@ -322,10 +453,10 @@ class GaleRedirect implements Responsable
         $intendedUrl = session()->pull('url.intended', $default);
 
         if ($intendedUrl !== $default && is_string($intendedUrl)) {
-            $intendedDomain = parse_url($intendedUrl, PHP_URL_HOST);
-            $currentDomain = parse_url((string) request()->url(), PHP_URL_HOST);
+            $intendedHost = parse_url($intendedUrl, PHP_URL_HOST);
+            $currentHost = parse_url((string) request()->url(), PHP_URL_HOST);
 
-            if ($intendedDomain !== $currentDomain) {
+            if ($intendedHost === false || $currentHost === false || !$this->isSameDomain((string) $intendedHost, (string) $currentHost)) {
                 $intendedUrl = $default;
             }
         }
