@@ -1067,6 +1067,30 @@ class GaleResponse implements Responsable
      * @param  \Closure  $callback  Function receiving this instance in streaming mode
      * @return static Returns this instance for method chaining
      */
+    /**
+     * Create a push channel broadcaster for a named channel (F-038, BR-038.1)
+     *
+     * Returns a GalePushChannel instance that queues SSE events for delivery
+     * to all clients subscribed to the given channel via x-listen or $listen.
+     *
+     * Usage:
+     *   gale()->push('notifications')->patchState(['count' => 5])->send();
+     *   gale()->push('dashboard')->patchElements('#stats', $html)->send();
+     *
+     * The push channel uses Laravel's cache to queue events for connected clients.
+     * Call ->send() to flush the queued events to the channel (BR-038.1).
+     *
+     * BR-038.10: Multiple channels can be pushed to simultaneously by calling push()
+     * multiple times with different channel names.
+     *
+     * @param  string  $channel  Channel name to broadcast to
+     * @return GalePushChannel Fluent push channel broadcaster
+     */
+    public function push(string $channel): GalePushChannel
+    {
+        return new GalePushChannel($channel);
+    }
+
     public function stream(Closure $callback): self
     {
         $this->streamCallback = function ($gale) use ($callback) {
