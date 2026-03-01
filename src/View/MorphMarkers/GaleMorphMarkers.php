@@ -105,8 +105,20 @@ class GaleMorphMarkers
     /**
      * Compile a Blade template source string by injecting morph markers.
      *
+     * NOTE: Laravel 12's Blade compiler already injects Alpine.morph-native block markers
+     * (<!--[if BLOCK]><![endif]--> and <!--[if ENDBLOCK]><![endif]-->) for @if, @foreach,
+     * @switch, @forelse, @unless, @isset, @auth, @guest, @while, and @for directives
+     * via SupportMorphAwareBladeCompilation (Livewire integration in Laravel core).
+     *
+     * Running our own precompiler on top would produce DOUBLE markers (3× BLOCK_START, 2×
+     * BLOCK_END), which breaks Alpine.morph's block-diffing algorithm. So we return the
+     * template unchanged here — Blade handles the marker injection natively.
+     *
+     * The BLOCK_START / BLOCK_END constants remain useful for PHP controllers that build
+     * HTML strings manually (e.g. outerMorph() responses) where Blade is not involved.
+     *
      * @param  string  $template  Raw Blade template source
-     * @return string Modified template source with marker injection calls
+     * @return string Unchanged template (Blade handles markers natively in Laravel 12)
      */
     public static function compile(string $template): string
     {
