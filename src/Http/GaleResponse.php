@@ -1105,15 +1105,131 @@ class GaleResponse implements Responsable
 
                 $callback($gale);
 
+                // Validate any buffered output INSIDE the try block so that
+                // InvalidArgumentException (BR-F009-03) can be caught and displayed
+                // as a proper Ignition/error page rather than corrupting the SSE stream
+                $this->validateAndFlushStreamBuffer();
+
             } catch (\Throwable $e) {
+                // Drain the output buffer before delegating to the exception handler
+                // to prevent captured raw output from leaking into the SSE stream
+                if (ob_get_level()) {
+                    ob_end_clean();
+                }
                 $this->handleNativeException($e);
             } finally {
+                // Clean up any remaining buffer (e.g. from HTML-format dd/dump output)
                 $this->handleStreamOutput();
                 $this->restoreOriginalHandlers();
             }
         };
 
         return $this;
+    }
+
+    /**
+     * Validate buffered output after the stream callback completes (normal flow only)
+     *
+     * Called inside the try block so that InvalidArgumentException from debug-mode
+     * validation can be caught and displayed as an Ignition/error page via
+     * handleNativeException(), rather than escaping the finally block silently.
+     *
+     * @throws \InvalidArgumentException When non-SSE output is captured in debug mode (BR-F009-03)
+     */
+    protected function validateAndFlushStreamBuffer(): void
+    {
+        $output = ob_get_contents();
+
+        // Nothing buffered — nothing to validate
+        if ($output === false || trim($output) === '') {
+            return;
+        }
+
+        // HTML output (dd/dump) is allowed and handled by handleStreamOutput() in finally
+        if ($this->looksLikeHtml($output)) {
+            return;
+        }
+
+        // Non-HTML, non-SSE output — validate and throw or emit gale-error (BR-F009-03/04)
+        $this->validateStreamOutput($output);
+
+        // If validateStreamOutput did not throw (production mode), drain the buffer so it
+        // does not reach handleStreamOutput() again and get displayed as garbage HTML
+        if (ob_get_level()) {
+            ob_end_clean();
+        }
+    }
+
+    /**
+     * Validate that captured output from a stream callback is valid SSE format
+     *
+     * Any direct echo/print output captured by the output buffer is validated here.
+     * Valid SSE lines start with: event:, data:, id:, retry:, : (comment), or are blank.
+     * In debug mode throws InvalidArgumentException; in production emits a gale-error event.
+     *
+     * @param  string  $output  Output captured from the stream callback
+     *
+     * @throws \InvalidArgumentException When output is invalid SSE format and app is in debug mode
+     */
+    protected function validateStreamOutput(string $output): void
+    {
+        $trimmed = trim($output);
+
+        if ($trimmed === '') {
+            return;
+        }
+
+        $lines = preg_split('/\r?\n/', $trimmed);
+        $invalidLines = [];
+
+        foreach ($lines as $line) {
+            // Blank lines are valid SSE event separators
+            if ($line === '') {
+                continue;
+            }
+
+            // Valid SSE field prefixes per the SSE specification
+            $isValid = str_starts_with($line, 'event:')
+                || str_starts_with($line, 'data:')
+                || str_starts_with($line, 'id:')
+                || str_starts_with($line, 'retry:')
+                || str_starts_with($line, ':');  // SSE comment
+
+            if (! $isValid) {
+                $invalidLines[] = $line;
+            }
+        }
+
+        if (empty($invalidLines)) {
+            return;
+        }
+
+        $preview = implode('\n', array_slice($invalidLines, 0, 3));
+
+        if (config('app.debug', false)) {
+            throw new \InvalidArgumentException(
+                'Gale stream callback produced non-SSE output. '
+                .'Direct echo/print inside stream() violates the SSE format. '
+                .'Use $gale->state(), $gale->patchState(), or other GaleResponse methods instead. '
+                ."Invalid output: \"{$preview}\""
+            );
+        }
+
+        // Production: log the error and emit a structured gale-error SSE event
+        $errorMessage = 'Gale stream callback produced non-SSE output (debug disabled). '
+            ."Invalid lines: \"{$preview}\"";
+
+        \Illuminate\Support\Facades\Log::error($errorMessage, [
+            'output_preview' => $preview,
+            'invalid_line_count' => count($invalidLines),
+        ]);
+
+        echo "event: gale-error\n";
+        echo 'data: '.json_encode([
+            'type' => 'stream-validation',
+            'message' => 'Stream callback produced non-SSE output. Check server logs.',
+        ])."\n\n";
+        flush();
     }
 
     /**
@@ -1216,9 +1332,11 @@ class GaleResponse implements Responsable
     /**
      * Process output buffer and replace document if content exists
      *
-     * Captures buffered output from the streaming callback. If output contains HTML
-     * (like Laravel's native dd/dump output), it's passed through directly. Otherwise,
-     * plain text is wrapped minimally. Terminates stream after document replacement.
+     * Captures buffered output from the streaming callback. HTML output (like Laravel's
+     * native dd/dump) is displayed in the browser via document replacement. Plain text
+     * that is not valid SSE format triggers stream validation (throws in debug,
+     * emits gale-error in production). Valid SSE output is passed through as-is.
+     * Terminates stream after document replacement.
      */
     protected function handleStreamOutput(): void
     {
@@ -1232,8 +1350,17 @@ class GaleResponse implements Responsable
             return;
         }
 
-        $html = $this->wrapOutputAsHtml($output);
-        $this->replaceDocumentAndExit($html);
+        // HTML output (e.g. dd(), dump(), Ignition error pages) is forwarded to the browser
+        // as a full-page document replacement — this is intentional dd/dump behavior (BR-F009-02)
+        if ($this->looksLikeHtml($output)) {
+            $html = $this->wrapOutputAsHtml($output);
+            $this->replaceDocumentAndExit($html);
+
+            return;
+        }
+
+        // Non-HTML output must be valid SSE format (BR-F009-01, BR-F009-02, BR-F009-03, BR-F009-04)
+        $this->validateStreamOutput($output);
     }
 
     /**
