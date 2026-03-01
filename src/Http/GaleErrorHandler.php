@@ -105,13 +105,19 @@ class GaleErrorHandler
     /**
      * Resolve HTTP status code from an exception
      *
-     * HttpExceptions carry their own status code. All other exception
-     * types default to 500 Internal Server Error (BR-014.12).
+     * HttpExceptions carry their own status code. AuthenticationException maps
+     * to 401 Unauthorized. All other exception types default to 500 Internal
+     * Server Error (BR-014.12).
      */
     public static function resolveStatusCode(\Throwable $e): int
     {
         if ($e instanceof HttpExceptionInterface) {
             return $e->getStatusCode();
+        }
+
+        // AuthenticationException (from auth middleware) maps to 401 Unauthorized
+        if ($e instanceof \Illuminate\Auth\AuthenticationException) {
+            return 401;
         }
 
         return 500;
