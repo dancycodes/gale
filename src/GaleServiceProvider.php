@@ -125,6 +125,7 @@ class GaleServiceProvider extends ServiceProvider
         $this->registerRouteDiscovery();
         $this->registerMiddlewareAliases();
         $this->registerMorphMarkers();
+        $this->registerDownloadRoute();
     }
 
     /**
@@ -569,6 +570,31 @@ class GaleServiceProvider extends ServiceProvider
         });
 
         return $this;
+    }
+
+    /**
+     * Register the Gale download serve route (F-039)
+     *
+     * Registers GET /gale/download/{token} as a named route handled by
+     * GaleDownloadServeController::serve(). This route is excluded from
+     * CSRF verification (it uses HMAC-signed tokens instead) and from
+     * the Gale checksum middleware (not a Gale request itself).
+     *
+     * The route uses the 'web' middleware group to get session support,
+     * but CSRF protection is explicitly disabled for this endpoint since
+     * the signed token already provides the security guarantee.
+     */
+    private function registerDownloadRoute(): void
+    {
+        if (app()->routesAreCached()) {
+            return;
+        }
+
+        Route::middleware('web')
+            ->withoutMiddleware([\Illuminate\Foundation\Http\Middleware\ValidateCsrfToken::class])
+            ->get('/gale/download/{token}', [\Dancycodes\Gale\Http\GaleDownloadServeController::class, 'serve'])
+            ->name('gale.download.serve')
+            ->where('token', '.+');
     }
 
     /**

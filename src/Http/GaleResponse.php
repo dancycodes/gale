@@ -1057,6 +1057,156 @@ class GaleResponse implements Responsable
     }
 
     /**
+     * Trigger a file download from a Gale action (F-039)
+     *
+     * Sends a `gale-download` event to the client containing a signed temporary URL.
+     * The client fetches the URL separately and triggers a browser download, preserving
+     * the current page (no navigation). Supports both file paths and raw content.
+     *
+     * In HTTP mode: emits a `gale-download` JSON event with the signed URL.
+     * In SSE mode:  emits a `gale-download` SSE event with the signed URL.
+     *
+     * The actual file is served by `GaleDownloadServeController::serve()`, which verifies
+     * the signature, sets `Content-Disposition: attachment`, and streams the file.
+     *
+     * Chainable: `gale()->download($path, 'report.pdf')->patchState(['lastExport' => now()])`
+     *
+     * @param  string  $pathOrContent   Absolute filesystem path OR raw file content string
+     * @param  string  $filename        Download filename presented to the browser
+     * @param  string|null  $mimeType   Optional MIME type (auto-detected from extension when null)
+     * @param  bool  $isContent        True when $pathOrContent is raw content, not a file path
+     * @return static Returns this instance for method chaining
+     *
+     * @throws \InvalidArgumentException When a file path does not exist
+     */
+    public function download(
+        string $pathOrContent,
+        string $filename,
+        ?string $mimeType = null,
+        bool $isContent = false
+    ): self {
+        /** @phpstan-ignore method.notFound (isGale is a Request macro) */
+        if (! request()->isGale()) {
+            return $this;
+        }
+
+        // BR-039.8: Sanitize filename — strip path separators and control characters
+        $safeFilename = $this->sanitizeDownloadFilename($filename);
+
+        if ($isContent) {
+            // Raw content: store in cache temporarily with a signed retrieval token
+            $token = $this->buildDownloadToken($safeFilename, $mimeType, content: $pathOrContent);
+        } else {
+            // File path: validate existence, then build token pointing to the path
+            if (! file_exists($pathOrContent)) {
+                throw new \InvalidArgumentException(
+                    "Download file not found: {$pathOrContent}"
+                );
+            }
+            $token = $this->buildDownloadToken($safeFilename, $mimeType, path: $pathOrContent);
+        }
+
+        $downloadUrl = $this->buildSignedDownloadUrl($token);
+
+        $structuredData = [
+            'url' => $downloadUrl,
+            'filename' => $safeFilename,
+        ];
+
+        // SSE data lines: url + filename
+        $dataLines = [
+            "url {$downloadUrl}",
+            "filename {$safeFilename}",
+        ];
+
+        $this->addJsonEvent('gale-download', $structuredData);
+        $this->handleEvent('gale-download', $dataLines);
+
+        return $this;
+    }
+
+    /**
+     * Sanitize a download filename for use in Content-Disposition headers (BR-039.8)
+     *
+     * Strips path traversal characters (/ \ .. null bytes) and trims whitespace.
+     * Preserves dots for extensions, unicode characters, spaces, and hyphens.
+     * Falls back to 'download' if the result would be empty.
+     *
+     * @param  string  $filename  Raw filename from developer/user
+     * @return string Sanitized filename safe for Content-Disposition header
+     */
+    protected function sanitizeDownloadFilename(string $filename): string
+    {
+        // Remove null bytes
+        $safe = str_replace("\0", '', $filename);
+
+        // Strip directory separators and traversal sequences
+        $safe = str_replace(['/', '\\', '..'], '', $safe);
+
+        // Remove leading dots (hidden files) and trim whitespace
+        $safe = ltrim(trim($safe), '.');
+
+        return $safe !== '' ? $safe : 'download';
+    }
+
+    /**
+     * Build a signed download token stored in the Laravel cache (BR-039.7, BR-039.9)
+     *
+     * Stores the download parameters (path or content + filename + MIME) in the cache
+     * with a short TTL, keyed by a random token. The token is then signed with the app key
+     * so it cannot be guessed or forged.
+     *
+     * @param  string  $filename    Sanitized filename for the download
+     * @param  string|null  $mimeType  MIME type (null = auto-detect)
+     * @param  string|null  $path    Absolute path to the file on disk
+     * @param  string|null  $content Raw file content (for dynamic downloads)
+     * @return string Signed opaque token
+     */
+    protected function buildDownloadToken(
+        string $filename,
+        ?string $mimeType,
+        ?string $path = null,
+        ?string $content = null
+    ): string {
+        $token = bin2hex(random_bytes(16));
+
+        $payload = [
+            'filename' => $filename,
+            'mime' => $mimeType,
+            'path' => $path,
+            // Store content only for small dynamic files; large files must use path
+            'content' => ($content !== null && strlen($content) <= 1_048_576) ? $content : null,
+            'expires' => time() + 300, // 5-minute window
+        ];
+
+        // For large content, write to a temp file and store path
+        if ($content !== null && strlen($content) > 1_048_576) {
+            $tmpPath = sys_get_temp_dir().'/gale-dl-'.$token;
+            file_put_contents($tmpPath, $content);
+            $payload['path'] = $tmpPath;
+            $payload['is_tmp'] = true;
+        }
+
+        \Illuminate\Support\Facades\Cache::put('gale_download:'.$token, $payload, 300);
+
+        // Sign the token using HMAC so it cannot be forged
+        $sig = hash_hmac('sha256', $token, config('app.key'));
+
+        return $token.'.'.$sig;
+    }
+
+    /**
+     * Build the absolute URL for the signed download endpoint
+     *
+     * @param  string  $signedToken  Signed token from buildDownloadToken()
+     * @return string Absolute download URL
+     */
+    protected function buildSignedDownloadUrl(string $signedToken): string
+    {
+        return url('/gale/download/'.urlencode($signedToken));
+    }
+
+    /**
      * Enable streaming mode for long-running operations
      *
      * Switches the response builder from accumulation mode to streaming mode, where events
