@@ -7,6 +7,7 @@ use Dancycodes\Gale\Security\StateChecksum;
 use Dancycodes\Gale\View\Fragment\BladeFragment;
 use Illuminate\Contracts\Support\Responsable;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Traits\Macroable;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
@@ -38,6 +39,32 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  */
 class GaleResponse implements Responsable
 {
+    use Macroable {
+        __call as macroableCall;
+    }
+
+    /**
+     * Registered before-hooks that run before the controller builds a GaleResponse (F-064)
+     *
+     * Each hook receives the Illuminate\Http\Request and must return void.
+     * Hooks are called in registration order (FIFO) for every Gale request.
+     *
+     * @var array<int, Closure> list of before-hook callables
+     */
+    protected static array $beforeHooks = [];
+
+    /**
+     * Registered after-hooks that run after the GaleResponse is fully built but
+     * before it is sent to the browser (F-064)
+     *
+     * Each hook receives (mixed $response, \Illuminate\Http\Request $request) and
+     * may return a replacement response or null to keep the original.
+     * Hooks are called in registration order (FIFO) for every Gale request.
+     *
+     * @var array<int, Closure> list of after-hook callables
+     */
+    protected static array $afterHooks = [];
+
     /** @var array<int, string> SSE-formatted event strings */
     protected array $events = [];
 
@@ -199,6 +226,98 @@ class GaleResponse implements Responsable
         $this->etagEnabled = false;
         $this->extraHeaders = [];
         $this->pendingFlash = [];
+    }
+
+    /**
+     * Register a before-hook that runs before the controller builds a GaleResponse (F-064)
+     *
+     * The hook receives the current Request. Multiple hooks run in registration order.
+     * Hooks only run for Gale requests (Gale-Request header present).
+     *
+     * Named `beforeRequest` to avoid collision with the DOM-insertion `before($selector, $html)` method.
+     *
+     * Example (in AppServiceProvider::boot()):
+     *   GaleResponse::beforeRequest(function (Request $request) {
+     *       logger('Gale request started for: ' . $request->path());
+     *   });
+     *
+     * @param  Closure  $hook  Callable receiving (\Illuminate\Http\Request) : void
+     */
+    public static function beforeRequest(Closure $hook): void
+    {
+        static::$beforeHooks[] = $hook;
+    }
+
+    /**
+     * Register an after-hook that runs after the GaleResponse is built (F-064)
+     *
+     * The hook receives ($response, Request). It MAY return a replacement response,
+     * or return null/void to keep the original response. Hooks run in registration order.
+     * Hooks only run for Gale requests (Gale-Request header present).
+     *
+     * Named `afterResponse` to avoid collision with the DOM-insertion `after($selector, $html)` method.
+     *
+     * Example (in AppServiceProvider::boot()):
+     *   GaleResponse::afterResponse(function (mixed $response, Request $request) {
+     *       $response->headers->set('X-Gale-Debug-Time', microtime(true));
+     *       return $response;
+     *   });
+     *
+     * @param  Closure  $hook  Callable receiving (mixed $response, \Illuminate\Http\Request) : mixed
+     */
+    public static function afterResponse(Closure $hook): void
+    {
+        static::$afterHooks[] = $hook;
+    }
+
+    /**
+     * Run all registered before-hooks for the current Gale request (F-064)
+     *
+     * Called from GalePipelineMiddleware before the controller executes.
+     * Only runs when the request has the Gale-Request header.
+     *
+     * @param  \Illuminate\Http\Request  $request  The current request
+     */
+    public static function runBeforeHooks($request): void
+    {
+        foreach (static::$beforeHooks as $hook) {
+            $hook($request);
+        }
+    }
+
+    /**
+     * Run all registered after-hooks for the current Gale response (F-064)
+     *
+     * Called from toResponse() after the response is built but before returning it.
+     * Each hook may return a replacement response; if it does, that becomes the
+     * new response for subsequent hooks and the final return value.
+     *
+     * @param  mixed  $response  The built Gale response
+     * @param  \Illuminate\Http\Request  $request  The current request
+     * @return mixed The (potentially replaced) response
+     */
+    public static function runAfterHooks(mixed $response, $request): mixed
+    {
+        foreach (static::$afterHooks as $hook) {
+            $replacement = $hook($response, $request);
+            if ($replacement !== null) {
+                $response = $replacement;
+            }
+        }
+
+        return $response;
+    }
+
+    /**
+     * Clear all registered before and after hooks (F-064)
+     *
+     * Primarily used in tests to reset hook state between test cases.
+     * Should not be called in production code.
+     */
+    public static function clearHooks(): void
+    {
+        static::$beforeHooks = [];
+        static::$afterHooks = [];
     }
 
     /**
@@ -1859,7 +1978,8 @@ class GaleResponse implements Responsable
                 // BR-F027-05: SSE streaming responses must never be cached
                 $response->headers->set('Cache-Control', 'no-store');
 
-                return $response;
+                // F-064: Run after-hooks on the streaming response (headers can be modified before streaming starts)
+                return static::runAfterHooks($response, $request);
             }
 
             // Resolve mode: Gale-Mode header > config('gale.mode') > 'http' default (BR-004.8)
@@ -1898,12 +2018,15 @@ class GaleResponse implements Responsable
                     }
                 }
 
-                return new JsonResponse(
+                $jsonResponse = new JsonResponse(
                     data: ['events' => $jsonEvents],
                     status: 200,
                     headers: $responseHeaders,
                     json: false,
                 );
+
+                // F-064: Run after-hooks — hooks may modify or replace the response
+                return static::runAfterHooks($jsonResponse, $request);
             }
 
             // SSE mode: use regular Response (works better with test environments) (BR-004.2)
@@ -1914,7 +2037,10 @@ class GaleResponse implements Responsable
 
             $sseHeaders = array_merge(self::headers(), $extraHeaders);
 
-            return response($output, 200, $sseHeaders);
+            $sseResponse = response($output, 200, $sseHeaders);
+
+            // F-064: Run after-hooks on the SSE response
+            return static::runAfterHooks($sseResponse, $request);
         } finally {
             // BR-F030-06: Guarantee state reset even if an exception is thrown
             // during response building. This safety net ensures no state bleeds

@@ -618,5 +618,6 @@ class GaleServiceProvider extends ServiceProvider
 
         $router->aliasMiddleware('gale.checksum', \Dancycodes\Gale\Http\Middleware\VerifyGaleChecksum::class);
         $router->aliasMiddleware('gale.without-checksum', \Dancycodes\Gale\Http\Middleware\WithoutGaleChecksum::class);
+        $router->aliasMiddleware('gale.pipeline', \Dancycodes\Gale\Http\Middleware\GalePipelineMiddleware::class);
     }
 }
