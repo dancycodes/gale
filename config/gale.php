@@ -35,6 +35,28 @@ return [
 
     'mode' => env('GALE_MODE', 'http'),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Blade Morph Markers (F-048)
+    |--------------------------------------------------------------------------
+    |
+    | When enabled (default), Gale injects HTML comment markers around
+    | @if, @foreach, @switch, @forelse, and other conditional/loop blocks:
+    |
+    |   <!--gale-block-start:{hash}-->
+    |   <!--gale-block-end:{hash}-->
+    |
+    | These markers provide stable anchor points for the morph algorithm
+    | so that conditional/loop changes (e.g. an @if branch flipping) don't
+    | cause incorrect DOM matching, which would destroy adjacent Alpine state.
+    |
+    | Set to false in production to omit markers and reduce HTML payload.
+    | Note: disabling reduces morph accuracy when conditional blocks change.
+    |
+    */
+
+    'morph_markers' => env('GALE_MORPH_MARKERS', true),
+
     'route_discovery' => [
         'enabled' => false,  // Opt-in by default
 

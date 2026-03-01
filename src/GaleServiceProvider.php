@@ -6,6 +6,7 @@ use Dancycodes\Gale\Exceptions\GaleMessageException;
 use Dancycodes\Gale\Http\GaleRedirect;
 use Dancycodes\Gale\Http\GaleResponse;
 use Dancycodes\Gale\View\Fragment\BladeFragment;
+use Dancycodes\Gale\View\MorphMarkers\GaleMorphMarkers;
 use Illuminate\Http\Request;
 use Illuminate\Routing\ResponseFactory;
 use Illuminate\Support\Arr;
@@ -119,6 +120,7 @@ class GaleServiceProvider extends ServiceProvider
         $this->registerResponseMacros();
         $this->registerRouteDiscovery();
         $this->registerMiddlewareAliases();
+        $this->registerMorphMarkers();
     }
 
     /**
@@ -178,6 +180,49 @@ class GaleServiceProvider extends ServiceProvider
                 )
             );
         }
+    }
+
+    /**
+     * Register the Blade precompiler that injects morph marker HTML comments (F-048)
+     *
+     * Registers GaleMorphMarkers as a Blade precompiler when morph_markers is
+     * enabled in config. The precompiler injects <!--gale-block-start:{hash}-->
+     * and <!--gale-block-end:{hash}--> markers around conditional and loop Blade
+     * blocks (@if, @foreach, @switch, @forelse, etc.).
+     *
+     * These markers provide stable anchor points for the Alpine.js morph algorithm,
+     * preventing incorrect element matching when conditional blocks change across
+     * renders.
+     *
+     * Registration uses callAfterResolving('blade.compiler') as a safety net to
+     * handle cases where the compiler is resolved before or after boot() runs,
+     * mirroring the pattern used by registerFragmentDirectives().
+     *
+     * BR-048.8: Markers are enabled by default; BR-048.9: disabled via config.
+     *
+     * @see \Dancycodes\Gale\View\MorphMarkers\GaleMorphMarkers
+     */
+    private function registerMorphMarkers(): void
+    {
+        if (! config('gale.morph_markers', true)) {
+            return;
+        }
+
+        $register = function (): void {
+            GaleMorphMarkers::register();
+        };
+
+        // Attempt immediate registration if Blade compiler already resolved
+        if ($this->app->resolved('blade.compiler')) {
+            try {
+                $register();
+            } catch (\Throwable) {
+                // Silently fail — callAfterResolving will handle it
+            }
+        }
+
+        // Safety net: also register via callAfterResolving
+        $this->callAfterResolving('blade.compiler', fn () => $register());
     }
 
     /**
