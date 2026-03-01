@@ -117,6 +117,17 @@ class GaleResponse implements Responsable
     protected array $pendingFlash = [];
 
     /**
+     * Accumulated server-debug entries from debug() calls (F-076)
+     *
+     * Each entry is collected in memory and flushed as individual `gale-debug` events
+     * when the response is built. Entries are ordered FIFO (insertion order).
+     * Empty when APP_DEBUG=false (debug() is a no-op in production — BR-F076-06).
+     *
+     * @var array<int, array{label: string, data: mixed, timestamp: string}>
+     */
+    protected array $debugEntries = [];
+
+    /**
      * Whether ETag-based conditional response is enabled for this response (BR-F027-08)
      *
      * When true, toResponse() generates an ETag header from the response content hash
@@ -226,6 +237,7 @@ class GaleResponse implements Responsable
         $this->etagEnabled = false;
         $this->extraHeaders = [];
         $this->pendingFlash = [];
+        $this->debugEntries = [];
     }
 
     /**
@@ -271,6 +283,196 @@ class GaleResponse implements Responsable
         $this->handleEvent('gale-debug-dump', $dataLines, $structuredData);
 
         return $this;
+    }
+
+    /**
+     * Send arbitrary debug data from the server to the browser debug panel (F-076)
+     *
+     * Collects data to be sent to the client-side "Server Debug" tab in the Gale Debug Panel.
+     * Accepts an optional string label as the first argument (two-argument form), or just
+     * the data value (one-argument form — label defaults to "debug").
+     *
+     * Multiple debug() calls in a single request are all collected in order (BR-F076-03).
+     *
+     * In production (APP_DEBUG=false) this method is a no-op — no data is collected and
+     * no event is emitted (BR-F076-06). Developers may safely leave debug() calls in code
+     * without risk of information leakage.
+     *
+     * Supported data types (BR-F076-01, BR-F076-09):
+     * - Scalars (string, int, float, bool, null)
+     * - Arrays (associative and indexed)
+     * - Objects implementing Arrayable or JsonSerializable (auto-serialized)
+     * - Eloquent models (serialized via toArray() — loaded relationships included)
+     * - Closures and non-serializable resources (converted to string representation)
+     * - Circular references (truncated with "[Circular]" marker — BR-F076-10)
+     *
+     * Usage:
+     *   gale()->debug($someArray);                    // one-argument — auto-label "debug"
+     *   gale()->debug('my label', $someObject);       // two-argument — custom label
+     *   gale()->debug('before validation', $request->all());
+     *
+     * In SSE/stream mode: each debug() call emits a `gale-debug` SSE event immediately
+     * at the point it was called (BR-F076-05). In HTTP mode: all accumulated entries
+     * are sent as `gale-debug` events in the JSON events array (BR-F076-04).
+     *
+     * @param  mixed  $labelOrData  String label (two-arg form) or the data itself (one-arg form)
+     * @param  mixed  $data  Data to debug (only used in two-argument form)
+     * @return static Returns this instance for method chaining
+     */
+    public function debug(mixed $labelOrData = null, mixed $data = null): static
+    {
+        // Production guard (BR-F076-06) — no-op when APP_DEBUG=false
+        if (! config('app.debug', false)) {
+            return $this;
+        }
+
+        // Determine label and data from argument signature
+        if (func_num_args() === 2) {
+            // Two-argument form: debug($label, $data)
+            $label = is_string($labelOrData) ? $labelOrData : 'debug';
+            $payload = $data;
+        } else {
+            // One-argument form: debug($data)
+            $label = 'debug';
+            $payload = $labelOrData;
+        }
+
+        // Serialize the payload to a JSON-safe value (BR-F076-01, BR-F076-09, BR-F076-10)
+        $serialized = $this->serializeDebugData($payload);
+
+        // Collect the entry (BR-F076-03)
+        $this->debugEntries[] = [
+            'label' => $label,
+            'data' => $serialized,
+            'timestamp' => now()->format('H:i:s.v'),
+        ];
+
+        // In streaming mode: emit immediately as a gale-debug SSE event (BR-F076-05)
+        if ($this->streamingMode) {
+            $this->emitDebugEntry([
+                'label' => $label,
+                'data' => $serialized,
+                'timestamp' => now()->format('H:i:s.v'),
+            ]);
+        }
+
+        return $this;
+    }
+
+    /**
+     * Serialize an arbitrary PHP value to a JSON-safe representation (F-076)
+     *
+     * Handles all PHP types that may be passed to debug():
+     * - Scalars: passed through as-is
+     * - Arrayable/JsonSerializable: serialized via their interface (BR-F076-09)
+     * - Eloquent Models: toArray() (BR-F076 Eloquent edge case)
+     * - Circular references: detected and replaced with "[Circular]" (BR-F076-10)
+     * - Very large data (>100KB JSON): truncated with warning (BR-F076 edge case)
+     * - Closures/Resources: replaced with string representation (BR-F076 edge case)
+     *
+     * @param  mixed  $data  The raw value passed by the developer
+     * @return mixed JSON-safe value (array, string, scalar, or null)
+     */
+    protected function serializeDebugData(mixed $data): mixed
+    {
+        // Handle Arrayable (Eloquent models, Collections, etc.) — BR-F076-09
+        if ($data instanceof \Illuminate\Contracts\Support\Arrayable) {
+            $data = $data->toArray();
+        }
+
+        // Handle JsonSerializable — BR-F076-09
+        if ($data instanceof \JsonSerializable) {
+            $data = $data->jsonSerialize();
+        }
+
+        // Handle resources (file handles, streams, etc.) — BR-F076 edge case
+        if (is_resource($data)) {
+            return '[Resource: '.get_resource_type($data).']';
+        }
+
+        // Handle closures — BR-F076 edge case
+        if ($data instanceof \Closure) {
+            return '[Closure]';
+        }
+
+        // Handle objects that aren't Arrayable/JsonSerializable — use get_object_vars
+        if (is_object($data)) {
+            try {
+                $data = (array) $data;
+            } catch (\Throwable) {
+                return '[Object: '.get_class($data).']';
+            }
+        }
+
+        // Scalars and arrays pass through — detect circular references via JSON encode/decode
+        try {
+            $encoded = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PARTIAL_OUTPUT_ON_ERROR);
+
+            if ($encoded === false) {
+                // Partial output was produced — return with circular marker note
+                return ['__debug_warning' => 'Data contained non-serializable values or circular references'];
+            }
+
+            // Check size limit: truncate at 100KB (BR-F076 edge case: very large data)
+            $size = strlen($encoded);
+            $limitBytes = 100 * 1024; // 100KB
+
+            if ($size > $limitBytes) {
+                $sizeKb = round($size / 1024, 1);
+
+                return [
+                    '__debug_warning' => "Debug data truncated (original: {$sizeKb}KB)",
+                    '__debug_truncated' => true,
+                ];
+            }
+
+            return json_decode($encoded, associative: true, flags: JSON_OBJECT_AS_ARRAY);
+        } catch (\Throwable) {
+            return ['__debug_warning' => 'Data could not be serialized'];
+        }
+    }
+
+    /**
+     * Emit a single debug entry as a gale-debug SSE event immediately (F-076)
+     *
+     * Used in SSE streaming mode where debug() calls must emit inline in the stream
+     * at the exact point they were called (BR-F076-05, Timing edge case).
+     *
+     * @param  array{label: string, data: mixed, timestamp: string}  $entry  Debug entry
+     */
+    protected function emitDebugEntry(array $entry): void
+    {
+        $payload = json_encode($entry, JSON_UNESCAPED_UNICODE | JSON_PARTIAL_OUTPUT_ON_ERROR) ?: '{}';
+
+        $dataLines = ["json {$payload}"];
+
+        $this->sendEventImmediately('gale-debug', $dataLines);
+    }
+
+    /**
+     * Flush all accumulated debug entries as gale-debug events (F-076)
+     *
+     * Called from toResponse() just before the response is finalized.
+     * In HTTP mode: adds each entry as a gale-debug event in the JSON events array.
+     * In SSE (non-streaming) mode: adds each entry to the SSE event queue.
+     *
+     * Not called in streaming mode — streaming mode emits entries immediately via debug().
+     */
+    protected function flushDebugEntries(): void
+    {
+        if (empty($this->debugEntries)) {
+            return;
+        }
+
+        foreach ($this->debugEntries as $entry) {
+            $payload = json_encode($entry, JSON_UNESCAPED_UNICODE | JSON_PARTIAL_OUTPUT_ON_ERROR) ?: '{}';
+
+            $dataLines = ["json {$payload}"];
+
+            $structuredData = $entry;
+
+            $this->addEventToQueue('gale-debug', $dataLines, $structuredData);
+        }
     }
 
     /**
@@ -1987,6 +2189,12 @@ class GaleResponse implements Responsable
         // Flush any pending flash data as a _flash state event before capturing locals (F-061)
         // This ensures all flash() calls in the request are batched into one state patch.
         $this->flushPendingFlash();
+
+        // Flush accumulated debug entries as gale-debug events before capturing locals (F-076)
+        // Only emits when APP_DEBUG=true and not in streaming mode (streaming emits immediately).
+        if (! $this->streamingMode) {
+            $this->flushDebugEntries();
+        }
 
         // Capture current state into locals — reset() in finally guarantees cleanup
         // even if an exception is thrown before or during processing (BR-F030-06)
