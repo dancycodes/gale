@@ -756,6 +756,46 @@ class GaleResponse implements Responsable
     }
 
     /**
+     * Set validation errors in the `errors` state key for client-side display (F-062)
+     *
+     * Sends field-level validation errors as arrays keyed by field name, matching
+     * Laravel's native ValidationException format. Each field maps to an array of
+     * one or more error message strings (BR-F062-02).
+     *
+     * This is the preferred format for $request->validate() auto-conversion because:
+     * - It preserves ALL error messages per field (not just the first)
+     * - It uses the `errors` state key (separate from `messages` used for general UI)
+     * - It is displayed via `x-message.from.errors="fieldname"`
+     *
+     * Example:
+     *   gale()->errors(['email' => ['The email field is required.']]);
+     *   gale()->errors(['email' => ['Invalid format.', 'Too long.']]);
+     *
+     * Frontend display:
+     *   <p x-message.from.errors="email" class="text-red-600 text-sm"></p>
+     *
+     * @param  array<string, array<int, string>>  $errors  Field names mapped to arrays of error strings
+     * @return static Returns this instance for method chaining
+     */
+    public function errors(array $errors): self
+    {
+        return $this->state('errors', $errors);
+    }
+
+    /**
+     * Clear all reactive validation errors from client-side state (F-062)
+     *
+     * Removes all errors by setting the `errors` state to an empty array.
+     * Useful after successful form submission to clear validation error indicators.
+     *
+     * @return static Returns this instance for method chaining
+     */
+    public function clearErrors(): self
+    {
+        return $this->state('errors', []);
+    }
+
+    /**
      * Deliver session flash data to the frontend as reactive state (F-061)
      *
      * Stores data in the Laravel session as flash (available for next request) AND
@@ -2763,9 +2803,9 @@ class GaleResponse implements Responsable
 
         $deletionArray = [];
         foreach ($stateKeys as $stateKey) {
-            // Special handling for messages state - reset to empty array instead of null
-            // The messages state is used by x-message directive and should always be an array
-            $deletionArray[$stateKey] = ($stateKey === 'messages') ? [] : null;
+            // Special handling for messages/errors state - reset to empty array instead of null
+            // Both are used by x-message directive and should always be arrays
+            $deletionArray[$stateKey] = in_array($stateKey, ['messages', 'errors'], strict: true) ? [] : null;
         }
 
         return $deletionArray;
