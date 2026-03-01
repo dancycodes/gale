@@ -818,113 +818,78 @@ class GaleResponse implements Responsable
     }
 
     /**
-     * Dispatch a custom browser event for inter-component communication
+     * Dispatch an Alpine-compatible custom browser event (F-054)
      *
-     * Creates and dispatches a CustomEvent either globally on the window object or
-     * targeted to specific DOM elements via CSS selectors. Event data is accessible
-     * through the event.detail property. Supports standard CustomEvent options including
-     * bubbling, cancelable, and composed properties.
+     * Dispatches a `CustomEvent` on `window` (default) or on the first element
+     * matching the optional CSS `$target` selector. The event detail is set to
+     * `$data` and is accessible via `$event.detail` in Alpine listeners.
      *
-     * @param  string  $eventName  Name of the CustomEvent to dispatch
-     * @param  array<string, mixed>  $data  Event payload accessible via event.detail
-     * @param  array<string, mixed>  $options  Dispatch configuration (selector, window, bubbles, cancelable, composed)
+     * Usage:
+     *   gale()->dispatch('show-toast', ['message' => 'Saved!'])          // window dispatch
+     *   gale()->dispatch('refresh', [], '#sidebar')                       // targeted dispatch
+     *   gale()->dispatch('cart-updated')->dispatch('notify', $data)       // chaining
+     *
+     * Alpine listener (window):
+     *   x-on:show-toast.window="handle($event.detail)"
+     *
+     * Alpine listener (targeted element, e.g. #sidebar):
+     *   x-on:refresh="loadItems()"   (no .window modifier needed)
+     *
+     * Event payload format (BR-F054-08):
+     *   { event: 'name', data: { ... }, target: '#selector' | null }
+     *
+     * Business rules:
+     *   - No target (or null): dispatched on window (BR-F054-01)
+     *   - With target: dispatched on the first matching element (BR-F054-02)
+     *   - No match for target: dispatched on window as fallback + console.warn (BR-F054-03)
+     *   - Events dispatched in order added (BR-F054-04)
+     *   - Standard CustomEvent compatible with Alpine @event.window and $event.detail (BR-F054-05)
+     *   - Chainable (BR-F054-06)
+     *   - Works in HTTP and SSE modes (BR-F054-07)
+     *
+     * @param  string  $eventName  Name of the CustomEvent (kebab-case recommended)
+     * @param  array<string, mixed>  $data  Event payload accessible via $event.detail
+     * @param  string|null  $target  Optional CSS selector to target a specific element
      * @return static Returns this instance for method chaining
      *
      * @throws \InvalidArgumentException When event name is empty
      */
-    public function dispatch(string $eventName, array $data = [], array $options = []): self
+    public function dispatch(string $eventName, array $data = [], ?string $target = null): self
     {
         /** @phpstan-ignore method.notFound (isGale is a Request macro) */
         if (! request()->isGale()) {
             return $this;
         }
 
-        // Validate event name
+        // BR-F054-08: Empty event name — log error on frontend, do not dispatch
         if (empty($eventName)) {
             throw new \InvalidArgumentException('Event name cannot be empty');
         }
 
-        // Extract options with defaults
-        $selector = $options['selector'] ?? null;
-        $window = $options['window'] ?? (! $selector); // Default to window if no selector
-        $bubbles = $options['bubbles'] ?? true;
-        $cancelable = $options['cancelable'] ?? true;
-        $composed = $options['composed'] ?? true;
-
-        // Safe JSON encoding
-        $safeEventName = json_encode($eventName, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
-        $safeData = json_encode($data, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
-        $safeBubbles = $bubbles ? 'true' : 'false';
-        $safeCancelable = $cancelable ? 'true' : 'false';
-        $safeComposed = $composed ? 'true' : 'false';
-
-        // Generate dispatch script
-        if ($selector) {
-            // Targeted dispatch to CSS selector(s)
-            $safeSelector = json_encode($selector, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
-
-            $script = "
-                (function() {
-                    const targets = document.querySelectorAll({$safeSelector});
-                    const eventName = {$safeEventName};
-                    const data = {$safeData};
-
-                    if (targets.length === 0) {
-                        console.warn('[Gale Dispatch] No elements found for selector:', {$safeSelector});
-                        return;
-                    }
-
-                    targets.forEach(target => {
-                        target.dispatchEvent(new CustomEvent(eventName, {
-                            detail: data,
-                            bubbles: {$safeBubbles},
-                            cancelable: {$safeCancelable},
-                            composed: {$safeComposed}
-                        }));
-                    });
-                })();
-            ";
-        } elseif ($window) {
-            // Global dispatch to window
-            $script = "
-                window.dispatchEvent(new CustomEvent({$safeEventName}, {
-                    detail: {$safeData},
-                    bubbles: {$safeBubbles},
-                    cancelable: {$safeCancelable},
-                    composed: {$safeComposed}
-                }));
-            ";
-        } else {
-            // Fallback to body dispatch
-            $script = "
-                document.body.dispatchEvent(new CustomEvent({$safeEventName}, {
-                    detail: {$safeData},
-                    bubbles: {$safeBubbles},
-                    cancelable: {$safeCancelable},
-                    composed: {$safeComposed}
-                }));
-            ";
-        }
-
-        // Add structured JSON event for dispatch (acceptance criteria #8)
-        // In JSON mode, dispatch uses a dedicated gale-dispatch type instead of script execution
-        $dispatchData = [
+        // Build structured payload: { event, data, target } (BR-F054-08)
+        $structuredData = [
             'event' => $eventName,
-            'detail' => $data,
+            'data' => $data,
+            'target' => $target,
         ];
-        if ($selector) {
-            $dispatchData['selector'] = $selector;
-        }
-        if ($window) {
-            $dispatchData['window'] = true;
-        }
-        $dispatchData['bubbles'] = $bubbles;
-        $dispatchData['cancelable'] = $cancelable;
-        $dispatchData['composed'] = $composed;
 
-        $this->addJsonEvent('gale-dispatch', $dispatchData);
+        // Build SSE data lines for streaming mode
+        $dataJson = json_encode($data, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE);
+        $dataLines = [
+            "event {$eventName}",
+            "data {$dataJson}",
+        ];
+        if ($target !== null) {
+            $dataLines[] = "target {$target}";
+        }
 
-        return $this->executeScript($script, ['autoRemove' => true]);
+        // Store JSON event for HTTP mode
+        $this->addJsonEvent('gale-dispatch', $structuredData);
+
+        // Emit SSE event for SSE mode (instead of script execution)
+        $this->handleEvent('gale-dispatch', $dataLines);
+
+        return $this;
     }
 
     /**
