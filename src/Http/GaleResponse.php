@@ -376,6 +376,56 @@ class GaleResponse implements Responsable
     }
 
     /**
+     * Patch an Alpine.js global store with new data (F-051)
+     *
+     * Sends a `gale-patch-store` event that merges the given data into the named
+     * Alpine.store() using RFC 7386 JSON Merge Patch semantics (null values delete
+     * keys, missing keys are preserved, nested objects are merged shallowly).
+     *
+     * The frontend validates that the store exists (was registered via Alpine.store())
+     * before patching. If the store is not found, a console error is logged and the
+     * patch is skipped — no exception is thrown.
+     *
+     * Multiple patchStore() calls in one response each emit a separate event (BR-F051-03),
+     * allowing multiple stores to be updated independently in a single request.
+     *
+     * Works in both HTTP mode (JSON events array) and SSE mode (text/event-stream).
+     *
+     * Example:
+     *   gale()->patchStore('cart', ['total' => 42, 'items' => []])
+     *   gale()->patchStore('cart', ['total' => 42])->patchStore('notifications', ['unread' => 3])
+     *
+     * @param  string  $storeName  Name of the Alpine store (from Alpine.store('name', ...))
+     * @param  array<string, mixed>  $data  Data to merge into the store (RFC 7386 Merge Patch)
+     * @return static Returns this instance for method chaining
+     */
+    public function patchStore(string $storeName, array $data): self
+    {
+        /** @phpstan-ignore method.notFound (isGale is a Request macro) */
+        if (! request()->isGale()) {
+            return $this;
+        }
+
+        // Build SSE data lines: store name + JSON data payload
+        $dataJson = json_encode($data);
+        $dataLines = [
+            "store {$storeName}",
+            "data {$dataJson}",
+        ];
+
+        // Build structured data for JSON serialization (BR-F051-08)
+        // Event payload format: { store: 'name', data: { ... } }
+        $structuredData = [
+            'store' => $storeName,
+            'data' => $data,
+        ];
+
+        $this->handleEvent('gale-patch-store', $dataLines, $structuredData);
+
+        return $this;
+    }
+
+    /**
      * Update a specific named component's state
      *
      * Sends a gale-patch-component event to update the Alpine state of a
