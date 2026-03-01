@@ -97,6 +97,12 @@ class GaleServiceProvider extends ServiceProvider
             ]);
         }
 
+        // Register gale:routes outside of runningInConsole() so it is available
+        // via Artisan::call() from HTTP context (e.g. CI/CD endpoints, test pages).
+        $this->commands([
+            \Dancycodes\Gale\Console\GaleRoutesCommand::class,
+        ]);
+
         $this->publishes([
             __DIR__.'/../resources/js' => public_path('vendor/gale/js'),
             __DIR__.'/../resources/css' => public_path('vendor/gale/css'),
