@@ -113,23 +113,25 @@ class AddGaleSecurityHeaders
         }
 
         // --- Cache-Control (BR-022.3 for state-bearing, BR-022.5 for SSE) ---
-        if (! $response->headers->has('Cache-Control')) {
-            if ($isSSE) {
-                // SSE responses use 'no-cache' (spec says no-store breaks SSE reconnection)
-                $sseCache = $this->resolveConfigValue($config, 'cache_control', 'no-cache');
-                if ($sseCache !== false) {
-                    $this->setHeaderSafe($response, 'Cache-Control', 'no-cache');
-                }
-            } else {
-                // State-bearing responses must not be cached (BR-022.3)
-                $cacheControl = $this->resolveConfigValue(
-                    $config,
-                    'cache_control',
-                    'no-store, no-cache, must-revalidate'
-                );
-                if ($cacheControl !== false) {
-                    $this->setHeaderSafe($response, 'Cache-Control', $cacheControl);
-                }
+        // Cache-Control is always applied (even when already set by the framework) because
+        // GaleResponse sets a weak 'no-cache' default that must be strengthened.
+        // BR-022.9 "controller values win" applies to application-controller-set headers
+        // like X-Frame-Options, not to GaleResponse's own framework defaults.
+        if ($isSSE) {
+            // SSE responses use 'no-cache' — no-store would break SSE reconnection
+            $sseCache = $this->resolveConfigValue($config, 'cache_control', 'no-cache');
+            if ($sseCache !== false) {
+                $this->setHeaderSafe($response, 'Cache-Control', 'no-cache');
+            }
+        } else {
+            // State-bearing HTTP responses must not be cached at all (BR-022.3 MUST rule)
+            $cacheControl = $this->resolveConfigValue(
+                $config,
+                'cache_control',
+                'no-store, no-cache, must-revalidate'
+            );
+            if ($cacheControl !== false) {
+                $this->setHeaderSafe($response, 'Cache-Control', $cacheControl);
             }
         }
 
