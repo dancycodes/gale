@@ -212,6 +212,35 @@ html.gale-navigating::before {
     transition: transform 0.2s ease-out, opacity 0.2s ease-out;
 }
 
+/* ============================================
+   OPTIMISTIC UI UPDATES (F-042)
+   Applied to components with unconfirmed (optimistic) state.
+   BR-042.5: elements with optimistic state MUST have a visual indicator.
+   BR-042.6: indicator MUST be removed on confirmation or rollback.
+   ============================================ */
+
+/**
+ * Subtle opacity reduction to indicate the element is in an unconfirmed
+ * optimistic state. The pulse animation draws attention without being jarring.
+ * Override in your app CSS for a custom optimistic visual indicator.
+ */
+.gale-optimistic {
+    opacity: 0.75;
+    animation: gale-optimistic-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes gale-optimistic-pulse {
+    0%, 100% { opacity: 0.75; }
+    50%       { opacity: 0.90; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .gale-optimistic {
+        animation: none !important;
+        opacity: 0.8;
+    }
+}
+
 /* Scale transitions */
 .gale-scale-in {
     transform: scale(0.95);
