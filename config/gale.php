@@ -191,6 +191,47 @@ return [
 
     'csp_nonce' => env('GALE_CSP_NONCE', null),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Security Headers (F-022)
+    |--------------------------------------------------------------------------
+    |
+    | Controls which security-hardening HTTP headers are automatically added
+    | to all Gale responses (both HTTP JSON and SSE streaming).
+    |
+    | Set any value to false to disable that specific header. An empty string
+    | is also treated as disabled.
+    |
+    | x_content_type_options:
+    |   Prevents MIME type sniffing attacks. The 'nosniff' value instructs
+    |   browsers to honour the declared Content-Type and not guess it.
+    |   Set to false to disable. (BR-022.1)
+    |
+    | x_frame_options:
+    |   Prevents clickjacking by controlling whether the response may be embedded
+    |   in a <frame>, <iframe>, <embed>, or <object>.
+    |   Values: 'SAMEORIGIN' (default), 'DENY', or false to disable. (BR-022.2)
+    |
+    | cache_control:
+    |   State-bearing responses should not be cached. The default value prevents
+    |   browsers and proxies from caching Gale JSON/SSE responses.
+    |   SSE responses always use 'no-cache' regardless of this value.
+    |   Set to false to let browser/proxy defaults apply. (BR-022.3)
+    |
+    | custom:
+    |   Add any additional HTTP response headers to all Gale responses. (BR-022.7)
+    |
+    */
+
+    'headers' => [
+        'x_content_type_options' => 'nosniff',
+        'x_frame_options' => 'SAMEORIGIN',
+        'cache_control' => 'no-store, no-cache, must-revalidate',
+        'custom' => [
+            // 'X-Custom-Header' => 'value',
+        ],
+    ],
+
     'route_discovery' => [
         'enabled' => false,  // Opt-in by default
 

@@ -675,5 +675,6 @@ PHP;
         $router->aliasMiddleware('gale.without-checksum', \Dancycodes\Gale\Http\Middleware\WithoutGaleChecksum::class);
         $router->aliasMiddleware('gale.pipeline', \Dancycodes\Gale\Http\Middleware\GalePipelineMiddleware::class);
         $router->aliasMiddleware('gale.dump-intercept', \Dancycodes\Gale\Http\Middleware\GaleDumpInterceptMiddleware::class);
+        $router->aliasMiddleware('gale.security-headers', \Dancycodes\Gale\Http\Middleware\AddGaleSecurityHeaders::class);
     }
 }
