@@ -95,6 +95,31 @@ return [
 
     'debug' => env('GALE_DEBUG', false),
 
+    /*
+    |--------------------------------------------------------------------------
+    | XSS Sanitization (F-014)
+    |--------------------------------------------------------------------------
+    |
+    | Controls whether HTML received in gale-patch-elements events is sanitized
+    | before being inserted into the DOM. Enabled by default to protect against
+    | XSS attacks from compromised or malicious server responses.
+    |
+    | sanitize_html: When true (default), the sanitizer strips <script> tags,
+    |   removes on* event handler attributes, and neutralizes javascript: URLs.
+    |
+    | allow_scripts: When false (default), <script> tags are stripped. Set to
+    |   true only in fully trusted environments where you control all HTML
+    |   content and need inline scripts to execute.
+    |
+    | SECURITY WARNING: Setting sanitize_html=false disables all XSS protection.
+    | Only do this if you fully trust all HTML content returned by your server.
+    |
+    */
+
+    'sanitize_html' => env('GALE_SANITIZE_HTML', true),
+
+    'allow_scripts' => env('GALE_ALLOW_SCRIPTS', false),
+
     'route_discovery' => [
         'enabled' => false,  // Opt-in by default
 

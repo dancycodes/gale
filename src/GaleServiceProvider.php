@@ -151,11 +151,18 @@ class GaleServiceProvider extends ServiceProvider
     $__galeDebugScript = config('app.debug')
         ? '<script>window.GALE_DEBUG_MODE=true;</script>' . chr(10)
         : '';
+    // F-014: Inject XSS sanitization config flags for alpine-gale to read at init time.
+    // These are inlined as window globals so the JS bundle can apply them before any
+    // gale-patch-elements events are processed (BR-014.7, BR-014.8).
+    $__galeSanitizeHtml = config('gale.sanitize_html', true) ? 'true' : 'false';
+    $__galeAllowScripts = config('gale.allow_scripts', false) ? 'true' : 'false';
+    $__galeXssScript = '<script>window.GALE_SANITIZE_HTML=' . $__galeSanitizeHtml . ';window.GALE_ALLOW_SCRIPTS=' . $__galeAllowScripts . ';</script>' . chr(10);
     echo '<meta name="csrf-token" content="' . csrf_token() . '">' . chr(10)
         . $__galeDebugScript
+        . $__galeXssScript
         . '<link rel="stylesheet" href="' . asset('vendor/gale/css/gale.css') . '">' . chr(10)
         . '<script type="module" src="' . asset('vendor/gale/js/gale.js') . '"></script>';
-    unset($__galeDebugScript);
+    unset($__galeDebugScript, $__galeSanitizeHtml, $__galeAllowScripts, $__galeXssScript);
 ?>
 PHP;
         });
