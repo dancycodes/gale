@@ -145,34 +145,58 @@ class GaleServiceProvider extends ServiceProvider
         // and optional debug mode flag (F-071: only injected when APP_DEBUG=true).
         // BR-F071-01/08: Debug panel JS is only activated in development mode.
         // window.GALE_DEBUG_MODE is read by debug.js as a secondary runtime guard.
-        Blade::directive('gale', function () {
-            return <<<'PHP'
+        //
+        // F-018 (BR-018.6): @gale accepts an optional options array with 'nonce' key.
+        // Usage: @gale                        — no nonce (default)
+        //        @gale(['nonce' => $nonce])   — CSP nonce injected on all script tags
+        // The nonce is also exposed as window.GALE_CSP_NONCE so the JS runtime can
+        // attach it to dynamically inserted gale->js() script tags (BR-018.4).
+        Blade::directive('gale', function (string $expression) {
+            // $expression is the raw PHP expression from the Blade template (e.g. "['nonce' => $nonce]").
+            // It is embedded directly into the compiled PHP output — no runtime code evaluation.
+            // An empty expression means @gale was called without arguments.
+            $optionsPhp = ($expression !== '') ? "(array) ({$expression})" : '[]';
+
+            return <<<PHP
 <?php
-    $__galeDebugScript = config('app.debug')
-        ? '<script>window.GALE_DEBUG_MODE=true;</script>' . chr(10)
+    // F-018: Resolve CSP nonce from directive argument, then config fallback.
+    // Priority: @gale(['nonce' => \$nonce]) > config('gale.csp_nonce') > null
+    \$__galeOptions = {$optionsPhp};
+    \$__galeNonce = \$__galeOptions['nonce'] ?? config('gale.csp_nonce', null);
+    // Sanitize nonce: only alphanumeric + base64url chars are valid nonce characters.
+    if (\$__galeNonce !== null) {
+        \$__galeNonce = preg_replace('/[^A-Za-z0-9+\\/=\\-_]/', '', (string) \$__galeNonce) ?: null;
+    }
+    \$__galeNonceAttr   = \$__galeNonce ? ' nonce="' . htmlspecialchars(\$__galeNonce, ENT_QUOTES) . '"' : '';
+    \$__galeNonceScript = \$__galeNonce
+        ? '<script' . \$__galeNonceAttr . '>window.GALE_CSP_NONCE=' . json_encode(\$__galeNonce) . ';</script>' . chr(10)
+        : '';
+    \$__galeDebugScript = config('app.debug')
+        ? '<script' . \$__galeNonceAttr . '>window.GALE_DEBUG_MODE=true;</script>' . chr(10)
         : '';
     // F-014: Inject XSS sanitization config flags for alpine-gale to read at init time.
     // These are inlined as window globals so the JS bundle can apply them before any
     // gale-patch-elements events are processed (BR-014.7, BR-014.8).
-    $__galeSanitizeHtml = config('gale.sanitize_html', true) ? 'true' : 'false';
-    $__galeAllowScripts = config('gale.allow_scripts', false) ? 'true' : 'false';
-    $__galeXssScript = '<script>window.GALE_SANITIZE_HTML=' . $__galeSanitizeHtml . ';window.GALE_ALLOW_SCRIPTS=' . $__galeAllowScripts . ';</script>' . chr(10);
+    \$__galeSanitizeHtml = config('gale.sanitize_html', true) ? 'true' : 'false';
+    \$__galeAllowScripts = config('gale.allow_scripts', false) ? 'true' : 'false';
+    \$__galeXssScript = '<script' . \$__galeNonceAttr . '>window.GALE_SANITIZE_HTML=' . \$__galeSanitizeHtml . ';window.GALE_ALLOW_SCRIPTS=' . \$__galeAllowScripts . ';</script>' . chr(10);
     // F-020: Inject redirect security config for alpine-gale to read at init time.
     // Publishes the server-side redirect whitelist to the frontend so the JS bundle
     // can enforce the same domain policy on gale-redirect events (BR-020.9 defense-in-depth).
-    $__galeRedirectConfig = [
+    \$__galeRedirectConfig = [
         'allowedDomains' => config('gale.redirect.allowed_domains', []),
         'allowExternal'  => (bool) config('gale.redirect.allow_external', false),
         'logBlocked'     => (bool) config('gale.redirect.log_blocked', true),
     ];
-    $__galeRedirectScript = '<script>window.GALE_REDIRECT_CONFIG=' . json_encode($__galeRedirectConfig) . ';</script>' . chr(10);
+    \$__galeRedirectScript = '<script' . \$__galeNonceAttr . '>window.GALE_REDIRECT_CONFIG=' . json_encode(\$__galeRedirectConfig) . ';</script>' . chr(10);
     echo '<meta name="csrf-token" content="' . csrf_token() . '">' . chr(10)
-        . $__galeDebugScript
-        . $__galeXssScript
-        . $__galeRedirectScript
+        . \$__galeNonceScript
+        . \$__galeDebugScript
+        . \$__galeXssScript
+        . \$__galeRedirectScript
         . '<link rel="stylesheet" href="' . asset('vendor/gale/css/gale.css') . '">' . chr(10)
-        . '<script type="module" src="' . asset('vendor/gale/js/gale.js') . '"></script>';
-    unset($__galeDebugScript, $__galeSanitizeHtml, $__galeAllowScripts, $__galeXssScript, $__galeRedirectConfig, $__galeRedirectScript);
+        . '<script type="module" src="' . asset('vendor/gale/js/gale.js') . '"' . \$__galeNonceAttr . '></script>';
+    unset(\$__galeOptions, \$__galeNonce, \$__galeNonceAttr, \$__galeNonceScript, \$__galeDebugScript, \$__galeSanitizeHtml, \$__galeAllowScripts, \$__galeXssScript, \$__galeRedirectConfig, \$__galeRedirectScript);
 ?>
 PHP;
         });

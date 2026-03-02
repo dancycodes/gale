@@ -1501,24 +1501,38 @@ class GaleResponse implements Responsable
      * Behavior depends on response mode: accumulates in normal mode, sends immediately
      * in streaming mode.
      *
+     * F-018 (BR-018.4): When a CSP nonce is needed, pass it via $options['nonce'] or
+     * let it auto-resolve from config('gale.csp_nonce'). The nonce is included in the
+     * JSON event so the frontend can attach it to the dynamically inserted script tag.
+     *
      * @param  string  $script  JavaScript code to execute
-     * @param  array<string, mixed>  $options  Script configuration (attributes, autoRemove)
+     * @param  array<string, mixed>  $options  Script configuration (attributes, autoRemove, nonce)
      * @return static Returns this instance for method chaining
      */
     protected function executeScript(string $script, array $options = []): self
     {
+        // F-018 (BR-018.4): Resolve CSP nonce for dynamic script execution.
+        // Priority: $options['nonce'] > config('gale.csp_nonce') > null
+        $nonce = $options['nonce'] ?? config('gale.csp_nonce', null);
+        if ($nonce !== null) {
+            $nonce = (string) $nonce;
+            // Pass nonce as an attribute so SSE mode script tags also receive it
+            $options['attributes'] = array_merge($options['attributes'] ?? [], ['nonce' => $nonce]);
+        }
+
         $dataLines = $this->buildScriptEvent($script, $options);
 
         // Build structured data for JSON serialization (acceptance criteria #6)
         // Script execution events use the gale-execute-script type in JSON format
         // to distinguish from regular element patches
-        $structuredData = [
+        $structuredData = array_filter([
             'script' => $script,
+            'nonce' => $nonce,
             'options' => array_filter([
                 'autoRemove' => $options['autoRemove'] ?? true,
                 'attributes' => $options['attributes'] ?? null,
             ], fn ($v) => $v !== null),
-        ];
+        ], fn ($v) => $v !== null);
 
         // Use gale-execute-script type for JSON (distinct from gale-patch-elements)
         // While SSE reuses gale-patch-elements with a script tag, JSON mode uses a

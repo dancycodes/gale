@@ -152,6 +152,45 @@ return [
 
     'allow_scripts' => env('GALE_ALLOW_SCRIPTS', false),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Content Security Policy Nonce (F-018)
+    |--------------------------------------------------------------------------
+    |
+    | When your application sets a CSP header with 'nonce-{value}', configure
+    | this setting so Gale can attach the nonce to:
+    |
+    |   1. The @gale script tag (so the browser allows the Gale bundle to load)
+    |   2. gale-execute-script / gale->js() dynamically inserted script tags
+    |      (so server-sent JavaScript executes without 'unsafe-inline')
+    |
+    | Setting options:
+    |
+    |   null (default): No nonce — CSP policy either does not require nonces or
+    |     uses a hash-based approach. The @gale script tag has no nonce attribute.
+    |     gale->js() calls WITHOUT a nonce are skipped with a console.warn when
+    |     the page has strict CSP (BR-018.5).
+    |
+    |   'auto': Gale reads window.GALE_CSP_NONCE at JS init time (the nonce you
+    |     injected via your own middleware). Recommended for per-request nonces.
+    |
+    |   '<nonce-string>': A static nonce value (uncommon; nonces should rotate).
+    |
+    | How to integrate with your CSP middleware:
+    |
+    |   In your middleware, generate a nonce, store it in the response header,
+    |   and expose it to Gale via config or a Blade variable:
+    |
+    |   // In a Blade layout, after setting config('gale.csp_nonce', $nonce):
+    |   @gale(['nonce' => config('gale.csp_nonce')])
+    |
+    | SECURITY WARNING: Never reuse nonces across requests. Each page load must
+    | have a unique nonce generated via random_bytes(16) or similar.
+    |
+    */
+
+    'csp_nonce' => env('GALE_CSP_NONCE', null),
+
     'route_discovery' => [
         'enabled' => false,  // Opt-in by default
 
