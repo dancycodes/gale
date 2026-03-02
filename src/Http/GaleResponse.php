@@ -147,6 +147,17 @@ class GaleResponse implements Responsable
     protected array $extraHeaders = [];
 
     /**
+     * When true, forces HTTP/JSON mode regardless of the Gale-Mode request header.
+     *
+     * Used by the ValidationException renderable in bootstrap/app.php to ensure
+     * validation error responses are always returned as JSON (application/json) so
+     * the SSE frontend can read the 422 body correctly (sse.js BR-F079-07).
+     * An SSE StreamedResponse with 422 status has content-type text/event-stream
+     * which is unreadable as JSON by the browser's fetch error handler.
+     */
+    protected bool $forceHttp = false;
+
+    /**
      * Valid response modes for Gale
      *
      * @var array<int, string>
@@ -238,6 +249,24 @@ class GaleResponse implements Responsable
         $this->extraHeaders = [];
         $this->pendingFlash = [];
         $this->debugEntries = [];
+        $this->forceHttp = false;
+    }
+
+    /**
+     * Force this response to use HTTP/JSON mode regardless of the Gale-Mode request header.
+     *
+     * Used for validation error responses (422) that must return application/json so the
+     * SSE frontend can parse the events body from a non-200 response (sse.js BR-F079-07).
+     * Without this, an SSE request returning 422 would produce a text/event-stream body
+     * that the browser fetch error handler cannot parse as JSON.
+     *
+     * @return static Returns this instance for method chaining
+     */
+    public function forceHttp(): self
+    {
+        $this->forceHttp = true;
+
+        return $this;
     }
 
     /**
@@ -2264,7 +2293,8 @@ class GaleResponse implements Responsable
             }
 
             // Resolve mode: Gale-Mode header > config('gale.mode') > 'http' default (BR-004.8)
-            $mode = self::resolveRequestMode($request);
+            // forceHttp() overrides the header — used for validation error responses (BR-F088-SSE)
+            $mode = $this->forceHttp ? 'http' : self::resolveRequestMode($request);
 
             if ($mode === 'http') {
                 // HTTP mode: return JsonResponse with serialized events (BR-004.1, BR-004.6)
