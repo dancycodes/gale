@@ -157,12 +157,22 @@ class GaleServiceProvider extends ServiceProvider
     $__galeSanitizeHtml = config('gale.sanitize_html', true) ? 'true' : 'false';
     $__galeAllowScripts = config('gale.allow_scripts', false) ? 'true' : 'false';
     $__galeXssScript = '<script>window.GALE_SANITIZE_HTML=' . $__galeSanitizeHtml . ';window.GALE_ALLOW_SCRIPTS=' . $__galeAllowScripts . ';</script>' . chr(10);
+    // F-020: Inject redirect security config for alpine-gale to read at init time.
+    // Publishes the server-side redirect whitelist to the frontend so the JS bundle
+    // can enforce the same domain policy on gale-redirect events (BR-020.9 defense-in-depth).
+    $__galeRedirectConfig = [
+        'allowedDomains' => config('gale.redirect.allowed_domains', []),
+        'allowExternal'  => (bool) config('gale.redirect.allow_external', false),
+        'logBlocked'     => (bool) config('gale.redirect.log_blocked', true),
+    ];
+    $__galeRedirectScript = '<script>window.GALE_REDIRECT_CONFIG=' . json_encode($__galeRedirectConfig) . ';</script>' . chr(10);
     echo '<meta name="csrf-token" content="' . csrf_token() . '">' . chr(10)
         . $__galeDebugScript
         . $__galeXssScript
+        . $__galeRedirectScript
         . '<link rel="stylesheet" href="' . asset('vendor/gale/css/gale.css') . '">' . chr(10)
         . '<script type="module" src="' . asset('vendor/gale/js/gale.js') . '"></script>';
-    unset($__galeDebugScript, $__galeSanitizeHtml, $__galeAllowScripts, $__galeXssScript);
+    unset($__galeDebugScript, $__galeSanitizeHtml, $__galeAllowScripts, $__galeXssScript, $__galeRedirectConfig, $__galeRedirectScript);
 ?>
 PHP;
         });

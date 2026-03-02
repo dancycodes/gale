@@ -37,26 +37,58 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Redirect Allowed Domains
+    | Redirect Allowed Domains (legacy — kept for backwards compatibility)
     |--------------------------------------------------------------------------
     |
-    | An optional list of domains (and wildcard patterns) that are explicitly
-    | whitelisted for use with GaleRedirect::back() and GaleRedirect::intended().
-    |
-    | When this list is non-empty, a previous/intended URL whose host matches any
-    | entry is accepted without further registrable-domain comparison.
-    |
-    | Supports:
-    |   - Exact hostnames:  'example.com', 'app.example.com'
-    |   - Wildcard prefix:  '*.example.com' (matches any subdomain AND the bare domain)
-    |
-    | When the list is empty (default), Gale falls back to registrable-domain
-    | comparison (last two DNS labels), which accepts subdomain relationships such
-    | as api.example.com ↔ app.example.com automatically.
+    | @deprecated Use 'redirect.allowed_domains' instead. This key is still
+    | read by GaleRedirect::back() and GaleRedirect::intended() but the new
+    | 'redirect' section takes precedence.
     |
     */
 
     'redirect_allowed_domains' => [],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Redirect Security (F-020)
+    |--------------------------------------------------------------------------
+    |
+    | Comprehensive open-redirect prevention for both backend (GaleRedirect)
+    | and frontend (navigate.js / json-processor.js).
+    |
+    | allowed_domains:
+    |   Explicit whitelist of external domains permitted for redirects.
+    |   Supports exact hostnames and *.wildcard subdomain patterns.
+    |   Examples:
+    |     'payment.stripe.com'   — exact match
+    |     '*.myapp.com'          — any subdomain of myapp.com AND myapp.com itself
+    |
+    | allow_external:
+    |   When true, all external domain redirects are permitted without whitelist
+    |   checking. The dangerous-protocol check (javascript:, data:, etc.) always
+    |   runs regardless of this setting.
+    |   Default: false (same-origin only unless domains are whitelisted).
+    |
+    | log_blocked:
+    |   When true, blocked redirect attempts are logged with console.warn and
+    |   pushed to the Gale debug panel.
+    |   Default: true.
+    |
+    | SECURITY WARNING: Setting allow_external=true disables domain checking.
+    | Only use this when you explicitly trust all redirect URLs your server emits.
+    |
+    */
+
+    'redirect' => [
+        'allowed_domains' => [
+            // Empty = same-origin only (default)
+            // Add trusted external domains:
+            // 'payment.stripe.com',
+            // '*.myapp.com',  // wildcard subdomain support
+        ],
+        'allow_external' => false,
+        'log_blocked' => true,
+    ],
 
     /*
     |--------------------------------------------------------------------------
