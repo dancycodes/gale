@@ -8,7 +8,7 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
 /**
- * Gale Error Response Handler (F-014, F-058)
+ * Gale Error Response Handler (F-014, F-058, F-060)
  *
  * Converts unhandled exceptions during Gale requests into structured
  * Gale error responses, preventing raw HTML error pages from being
@@ -26,6 +26,10 @@ use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
  * - Production: only generic safe messages — no class names, paths, or traces exposed
  * - All standard HTTP error codes handled (401, 403, 404, 419, 422, 429, 500, 503)
  * - Error data uses { error: true, status, message } shape in HTTP mode (BR-F058-02)
+ *
+ * F-060 additions (Middleware Compatibility):
+ * - AuthorizationException (from can/authorize middleware) maps to 403 Forbidden (BR-F060-05)
+ * - HttpException headers (e.g. Retry-After from throttle middleware) preserved in response (BR-F060-02, BR-F060-08)
  *
  * Non-Gale requests pass through unchanged (BR-BR-F058-07).
  */
@@ -57,6 +61,11 @@ class GaleErrorHandler
         $errorDetail = self::buildErrorDetail($e, $status, $message);
 
         try {
+            // F-060 BR-F060-08: Collect any headers the exception carries (e.g. Retry-After from throttle)
+            // so they are forwarded to the Gale response. HttpExceptionInterface::getHeaders() returns
+            // the headers the middleware set on the exception before throwing it.
+            $exceptionHeaders = $e instanceof HttpExceptionInterface ? $e->getHeaders() : [];
+
             // 401 Unauthorized: redirect to login (BR-F012-01, BR-F012-02, BR-F012-03)
             // For HTTP mode: gale()->redirect() produces a JSON response containing a JS redirect
             //   event — 200 status is correct so the frontend processes the event body.
@@ -82,6 +91,11 @@ class GaleErrorHandler
                 $response = $gale->toResponse($request);
                 $response->setStatusCode($status);
 
+                // Preserve exception headers (BR-F060-08)
+                foreach ($exceptionHeaders as $name => $value) {
+                    $response->headers->set($name, $value);
+                }
+
                 return $response;
             }
 
@@ -93,6 +107,11 @@ class GaleErrorHandler
 
             $response = $gale->toResponse($request);
             $response->setStatusCode($status);
+
+            // F-060 BR-F060-08: Preserve exception headers (e.g. Retry-After from throttle middleware)
+            foreach ($exceptionHeaders as $name => $value) {
+                $response->headers->set($name, $value);
+            }
 
             return $response;
 
@@ -152,8 +171,9 @@ class GaleErrorHandler
      * Resolve HTTP status code from an exception
      *
      * HttpExceptions carry their own status code. AuthenticationException maps
-     * to 401 Unauthorized. All other exception types default to 500 Internal
-     * Server Error (BR-014.12).
+     * to 401 Unauthorized. AuthorizationException (from can/authorize middleware)
+     * maps to 403 Forbidden (F-060 BR-F060-05). All other exception types default
+     * to 500 Internal Server Error (BR-014.12).
      */
     public static function resolveStatusCode(\Throwable $e): int
     {
@@ -166,6 +186,13 @@ class GaleErrorHandler
             return 401;
         }
 
+        // F-060 BR-F060-05: AuthorizationException (from can/authorize middleware) maps to 403 Forbidden
+        // AuthorizationException is NOT an HttpExceptionInterface, so it falls through the first check.
+        // Laravel's own exception handler maps it to 403 — we mirror that behaviour here.
+        if ($e instanceof \Illuminate\Auth\Access\AuthorizationException) {
+            return 403;
+        }
+
         return 500;
     }
 
@@ -174,8 +201,9 @@ class GaleErrorHandler
      *
      * Priority:
      * 1. HttpException messages from abort() -- developer-defined, always safe
-     * 2. Debug mode: expose the actual exception message (BR-014.10)
-     * 3. Production mode: generic safe messages by status code (BR-014.11, BR-F058-05)
+     * 2. AuthorizationException message -- safe, developer-controlled policy message
+     * 3. Debug mode: expose the actual exception message (BR-014.10)
+     * 4. Production mode: generic safe messages by status code (BR-014.11, BR-F058-05)
      */
     public static function resolveMessage(\Throwable $e, int $status): string
     {
@@ -184,6 +212,15 @@ class GaleErrorHandler
             $httpMessage = $e->getMessage();
             if (! empty($httpMessage)) {
                 return $httpMessage;
+            }
+        }
+
+        // F-060 BR-F060-05: AuthorizationException message is policy-defined and safe to surface
+        // e.g. "This action is unauthorized." from Gate/Policy evaluation
+        if ($e instanceof \Illuminate\Auth\Access\AuthorizationException) {
+            $authMessage = $e->getMessage();
+            if (! empty($authMessage)) {
+                return $authMessage;
             }
         }
 
