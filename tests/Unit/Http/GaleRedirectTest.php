@@ -24,6 +24,16 @@ class GaleRedirectTest extends TestCase
         request()->headers->set('Gale-Request', 'true');
     }
 
+    /**
+     * Clean up request headers that may contaminate other tests.
+     */
+    protected function tearDown(): void
+    {
+        request()->headers->remove('referer');
+        session()->forget(['_previous.url', 'url.intended']);
+        parent::tearDown();
+    }
+
     /** @test */
     public function test_redirect_creates_instance()
     {

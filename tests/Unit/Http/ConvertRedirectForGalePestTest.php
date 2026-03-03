@@ -49,6 +49,13 @@ function runMiddleware(Request $request, \Closure $next): \Symfony\Component\Htt
     return (new ConvertRedirectForGale)->handle($request, $next);
 }
 
+// Remove app()->instance('request', ...) bindings after each test so they do
+// not contaminate subsequent Pest test files sharing the same app instance.
+afterEach(function () {
+    app()->forgetInstance('request');
+    app()->forgetInstance('url');
+});
+
 // ---------------------------------------------------------------------------
 // SECTION 1: Gale request with RedirectResponse — must convert
 // ---------------------------------------------------------------------------

@@ -49,17 +49,18 @@ class HandleGroupAttribute implements PendingRouteTransformer
      * Validates that #[Prefix] and #[Group] are not used simultaneously. Then applies
      * the URI prefix, middleware, and domain from #[Group] to every action in the controller.
      *
-     * @param  Collection<int, PendingRoute>  $pendingRoutes  Pending routes to transform
-     * @return Collection<int, PendingRoute> Transformed pending routes with group settings applied
+     * @param Collection<int, PendingRoute> $pendingRoutes Pending routes to transform
      *
      * @throws LogicException When both #[Prefix] and #[Group] are on the same class
+     *
+     * @return Collection<int, PendingRoute> Transformed pending routes with group settings applied
      */
     public function transform(Collection $pendingRoutes): Collection
     {
         $pendingRoutes->each(function (PendingRoute $pendingRoute) {
             $groupAttribute = $pendingRoute->getAttribute(Group::class);
 
-            if (! $groupAttribute instanceof Group) {
+            if (!$groupAttribute instanceof Group) {
                 return;
             }
 
@@ -87,8 +88,8 @@ class HandleGroupAttribute implements PendingRouteTransformer
      * Replaces the filesystem-derived controller URI segment with the declared prefix.
      * Empty prefix (after normalization) is treated as a no-op.
      *
-     * @param  PendingRoute  $pendingRoute  The pending route whose actions to update
-     * @param  Group  $groupAttribute  The resolved Group attribute instance
+     * @param PendingRoute $pendingRoute The pending route whose actions to update
+     * @param Group $groupAttribute The resolved Group attribute instance
      */
     protected function applyUriPrefix(PendingRoute $pendingRoute, Group $groupAttribute): void
     {
@@ -111,13 +112,13 @@ class HandleGroupAttribute implements PendingRouteTransformer
             if ($controllerUri === '' || $actionUri === $controllerUri) {
                 // Index / __invoke: action URI is just the controller URI
                 $action->uri = $prefix;
-            } elseif (str_starts_with($actionUri, $controllerUri.'/')) {
+            } elseif (str_starts_with($actionUri, $controllerUri . '/')) {
                 // Method URI: replace the filesystem-derived controller segment
                 $methodSegment = substr($actionUri, strlen($controllerUri) + 1);
-                $action->uri = $prefix.'/'.$methodSegment;
+                $action->uri = $prefix . '/' . $methodSegment;
             } else {
                 // Fallback: prepend prefix to whatever URI the action has
-                $action->uri = $prefix.'/'.ltrim($actionUri, '/');
+                $action->uri = $prefix . '/' . ltrim($actionUri, '/');
             }
         });
     }
@@ -128,8 +129,8 @@ class HandleGroupAttribute implements PendingRouteTransformer
      * Group-level middleware is prepended (applied before method middleware) by
      * calling addMiddleware() which deduplicates automatically.
      *
-     * @param  PendingRoute  $pendingRoute  The pending route whose actions to update
-     * @param  Group  $groupAttribute  The resolved Group attribute instance
+     * @param PendingRoute $pendingRoute The pending route whose actions to update
+     * @param Group $groupAttribute The resolved Group attribute instance
      */
     protected function applyMiddleware(PendingRoute $pendingRoute, Group $groupAttribute): void
     {
@@ -148,8 +149,8 @@ class HandleGroupAttribute implements PendingRouteTransformer
      * Sets domain on every action. Method-level #[Route(domain:)] may override
      * this later via HandleDomainAttribute.
      *
-     * @param  PendingRoute  $pendingRoute  The pending route whose actions to update
-     * @param  Group  $groupAttribute  The resolved Group attribute instance
+     * @param PendingRoute $pendingRoute The pending route whose actions to update
+     * @param Group $groupAttribute The resolved Group attribute instance
      */
     protected function applyDomain(PendingRoute $pendingRoute, Group $groupAttribute): void
     {

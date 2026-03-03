@@ -33,20 +33,20 @@ class ConvertRedirectForGale
     /**
      * Handle an incoming request and convert redirect responses for Gale.
      *
-     * @param  \Closure(\Illuminate\Http\Request): (\Symfony\Component\HttpFoundation\Response)  $next
+     * @param \Closure(\Illuminate\Http\Request): (\Symfony\Component\HttpFoundation\Response) $next
      */
     public function handle(Request $request, Closure $next): Response
     {
         $response = $next($request);
 
         // Only intercept RedirectResponse instances (BR-011.6)
-        if (! $response instanceof RedirectResponse) {
+        if (!$response instanceof RedirectResponse) {
             return $response;
         }
 
         // Only convert for Gale requests (BR-011.6)
         /** @phpstan-ignore method.notFound (isGale is a Request macro) */
-        if (! $request->isGale()) {
+        if (!$request->isGale()) {
             return $response;
         }
 

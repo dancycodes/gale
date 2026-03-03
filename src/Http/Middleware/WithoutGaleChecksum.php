@@ -37,7 +37,7 @@ class WithoutGaleChecksum
     /**
      * Handle an incoming request by flagging it to bypass checksum verification.
      *
-     * @param  \Closure(\Illuminate\Http\Request): (\Symfony\Component\HttpFoundation\Response)  $next
+     * @param \Closure(\Illuminate\Http\Request): (\Symfony\Component\HttpFoundation\Response) $next
      */
     public function handle(Request $request, Closure $next): Response
     {

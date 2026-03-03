@@ -30,13 +30,13 @@ class VerifyGaleChecksum
     /**
      * Handle an incoming request and verify the Gale state checksum.
      *
-     * @param  \Closure(\Illuminate\Http\Request): (\Symfony\Component\HttpFoundation\Response)  $next
+     * @param \Closure(\Illuminate\Http\Request): (\Symfony\Component\HttpFoundation\Response) $next
      */
     public function handle(Request $request, Closure $next): Response
     {
         // Only run for Gale requests (BR-013.5)
         /** @phpstan-ignore method.notFound (isGale is a Request macro) */
-        if (! $request->isGale()) {
+        if (!$request->isGale()) {
             return $next($request);
         }
 
@@ -63,12 +63,12 @@ class VerifyGaleChecksum
         $submittedChecksum = $body[StateChecksum::KEY] ?? null;
 
         // State present but no checksum → reject (BR-013.5)
-        if (! is_string($submittedChecksum) || $submittedChecksum === '') {
+        if (!is_string($submittedChecksum) || $submittedChecksum === '') {
             return $this->rejectRequest('checksum_missing');
         }
 
         // Verify using timing-safe comparison (BR-013.8)
-        if (! StateChecksum::verify($body, $submittedChecksum)) {
+        if (!StateChecksum::verify($body, $submittedChecksum)) {
             return $this->rejectRequest('checksum_mismatch');
         }
 
@@ -118,7 +118,7 @@ class VerifyGaleChecksum
      * The response carries a structured error body so the Alpine-Gale error handler
      * knows it is a security event and not a generic server error (BR-013.7).
      *
-     * @param  string  $reason  Machine-readable rejection reason
+     * @param string $reason Machine-readable rejection reason
      */
     protected function rejectRequest(string $reason): Response
     {

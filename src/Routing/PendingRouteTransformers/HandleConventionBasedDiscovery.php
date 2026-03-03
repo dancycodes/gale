@@ -83,12 +83,13 @@ class HandleConventionBasedDiscovery implements PendingRouteTransformer
      * - Removes all actions that do NOT have an explicit #[Route] attribute.
      *   Convention-based discovery is entirely disabled for that controller.
      *
-     * @param  Collection<int, PendingRoute>  $pendingRoutes  Pending routes to transform
+     * @param Collection<int, PendingRoute> $pendingRoutes Pending routes to transform
+     *
      * @return Collection<int, PendingRoute> Filtered, URI-corrected pending routes
      */
     public function transform(Collection $pendingRoutes): Collection
     {
-        if (! config('gale.route_discovery.conventions', true)) {
+        if (!config('gale.route_discovery.conventions', true)) {
             return $pendingRoutes;
         }
 
@@ -111,7 +112,7 @@ class HandleConventionBasedDiscovery implements PendingRouteTransformer
             });
 
             // Pluralize the controller's base URI for convention-based controllers
-            if (! $hasNoAutoDiscovery) {
+            if (!$hasNoAutoDiscovery) {
                 $pendingRoute->uri = $this->pluralizeUri($pendingRoute->uri);
             }
 
@@ -126,7 +127,7 @@ class HandleConventionBasedDiscovery implements PendingRouteTransformer
                     return;
                 }
 
-                if (! in_array($action->method->name, $this->conventionalMethods, true)) {
+                if (!in_array($action->method->name, $this->conventionalMethods, true)) {
                     return;
                 }
 
@@ -145,7 +146,8 @@ class HandleConventionBasedDiscovery implements PendingRouteTransformer
      * Derives the relative URI based on the method name and its first model/scalar
      * parameter. The controller base URI will be prepended by AddControllerUriToActions.
      *
-     * @param  PendingRouteAction  $action  The pending route action
+     * @param PendingRouteAction $action The pending route action
+     *
      * @return string Relative URI segment
      */
     protected function buildConventionalRelativeUri(PendingRouteAction $action): string
@@ -156,7 +158,7 @@ class HandleConventionBasedDiscovery implements PendingRouteTransformer
             'index', 'store' => '',
             'create' => 'create',
             'show', 'update', 'destroy' => $this->buildParamSegment($action),
-            'edit' => $this->buildParamSegment($action).'/edit',
+            'edit' => $this->buildParamSegment($action) . '/edit',
             default => $action->uri,
         };
     }
@@ -167,7 +169,8 @@ class HandleConventionBasedDiscovery implements PendingRouteTransformer
      * Extracts the first URL-eligible parameter from the method signature and returns
      * it as a route parameter placeholder (e.g., {contact}).
      *
-     * @param  PendingRouteAction  $action  The pending route action
+     * @param PendingRouteAction $action The pending route action
+     *
      * @return string Parameter segment like {contact}
      */
     protected function buildParamSegment(PendingRouteAction $action): string
@@ -180,7 +183,7 @@ class HandleConventionBasedDiscovery implements PendingRouteTransformer
             $urlParams = collect($action->method->getParameters())->filter(function (\ReflectionParameter $p) {
                 $type = $p->getType();
 
-                if (! $type instanceof \ReflectionNamedType) {
+                if (!$type instanceof \ReflectionNamedType) {
                     return false;
                 }
 
@@ -194,7 +197,7 @@ class HandleConventionBasedDiscovery implements PendingRouteTransformer
 
         $firstParam = $urlParams->first();
 
-        return '{'.$firstParam->getName().'}';
+        return '{' . $firstParam->getName() . '}';
     }
 
     /**
@@ -208,7 +211,8 @@ class HandleConventionBasedDiscovery implements PendingRouteTransformer
      *   user-profile -> user-profiles
      *   admin/contact -> admin/contacts
      *
-     * @param  string  $uri  Controller URI derived from filesystem path
+     * @param string $uri Controller URI derived from filesystem path
+     *
      * @return string URI with final segment pluralized
      */
     protected function pluralizeUri(string $uri): string

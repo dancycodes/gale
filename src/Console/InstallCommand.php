@@ -43,7 +43,7 @@ class InstallCommand extends Command
             '--force' => true,
         ]);
 
-        $this->components->task('Publishing Gale assets', fn() => true);
+        $this->components->task('Publishing Gale assets', fn () => true);
 
         $this->newLine();
         $this->components->info('Gale installed successfully!');

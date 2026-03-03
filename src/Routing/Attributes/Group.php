@@ -33,10 +33,10 @@ class Group implements DiscoveryAttribute
     /**
      * Initialize route group attribute
      *
-     * @param  string|null  $prefix  URI segment to prepend to all controller routes
-     * @param  array<int, string>|string  $middleware  Middleware to apply to all routes
-     * @param  string|null  $as  Name prefix prepended to all route names
-     * @param  string|null  $domain  Domain constraint applied to all routes
+     * @param string|null $prefix URI segment to prepend to all controller routes
+     * @param array<int, string>|string $middleware Middleware to apply to all routes
+     * @param string|null $as Name prefix prepended to all route names
+     * @param string|null $domain Domain constraint applied to all routes
      */
     public function __construct(
         public ?string $prefix = null,

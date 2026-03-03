@@ -89,6 +89,13 @@ function getResponseContent(\Symfony\Component\HttpFoundation\Response $response
     return $response->getContent() ?: '';
 }
 
+// Remove any app()->instance('request', ...) bindings set by tests in this file
+// so they don't contaminate subsequent test files (e.g. GaleRedirectPestTest).
+afterEach(function () {
+    app()->forgetInstance('request');
+    app()->forgetInstance('url');
+});
+
 // ---------------------------------------------------------------------------
 // SECTION 1: Non-Gale requests — must return null (pass-through)
 // ---------------------------------------------------------------------------

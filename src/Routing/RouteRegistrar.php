@@ -51,7 +51,7 @@ class RouteRegistrar
      * Base path and root namespace can be customized via fluent methods before
      * executing discovery.
      *
-     * @param  Router  $router  Laravel router instance
+     * @param Router $router Laravel router instance
      */
     public function __construct(Router $router)
     {
@@ -67,7 +67,8 @@ class RouteRegistrar
      * converting file paths to class names. Typically set to Laravel application
      * root or specific subdirectory for scoped discovery.
      *
-     * @param  string  $basePath  Absolute filesystem path
+     * @param string $basePath Absolute filesystem path
+     *
      * @return static Returns this instance for method chaining
      */
     public function useBasePath(string $basePath): self
@@ -84,7 +85,8 @@ class RouteRegistrar
      * fully-qualified controller class names. Typically set to application
      * namespace like 'App' or 'App\\Http\\Controllers'.
      *
-     * @param  string  $rootNamespace  Namespace prefix for discovered controllers
+     * @param string $rootNamespace Namespace prefix for discovered controllers
+     *
      * @return static Returns this instance for method chaining
      */
     public function useRootNamespace(string $rootNamespace): self
@@ -101,7 +103,7 @@ class RouteRegistrar
      * via factory, applies transformer pipeline, and registers with Laravel router.
      * Entry point for route discovery process.
      *
-     * @param  string  $directory  Absolute or relative path to controller directory
+     * @param string $directory Absolute or relative path to controller directory
      */
     public function registerDirectory(string $directory): void
     {
@@ -122,7 +124,8 @@ class RouteRegistrar
      * factory (abstract classes, non-existent classes). Returns flattened collection of
      * all pending routes from directory tree.
      *
-     * @param  string  $directory  Directory path to scan
+     * @param string $directory Directory path to scan
+     *
      * @return Collection<int, PendingRoute> Collection of pending routes from directory
      */
     protected function convertToPendingRoutes(string $directory): Collection
@@ -162,7 +165,8 @@ class RouteRegistrar
      * container, and applies transformers sequentially to pending routes collection. Each
      * transformer receives output from previous transformer, enabling pipeline composition.
      *
-     * @param  Collection<int, PendingRoute>  $pendingRoutes  Pending routes to transform
+     * @param Collection<int, PendingRoute> $pendingRoutes Pending routes to transform
+     *
      * @return Collection<int, PendingRoute> Transformed pending routes
      */
     protected function transformPendingRoutes(Collection $pendingRoutes): Collection
@@ -189,7 +193,7 @@ class RouteRegistrar
      * constraints, domain constraints, and soft-delete configuration from pending action
      * properties.
      *
-     * @param  Collection<int, PendingRoute>  $pendingRoutes  Pending routes to register
+     * @param Collection<int, PendingRoute> $pendingRoutes Pending routes to register
      */
     protected function registerRoutes(Collection $pendingRoutes): void
     {

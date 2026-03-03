@@ -37,7 +37,8 @@ class HandleGroupNamePrefix implements PendingRouteTransformer
      * the `as` value to each action's current name (whether explicit or auto-generated).
      * Actions with no name are skipped.
      *
-     * @param  Collection<int, PendingRoute>  $pendingRoutes  Pending routes to transform
+     * @param Collection<int, PendingRoute> $pendingRoutes Pending routes to transform
+     *
      * @return Collection<int, PendingRoute> Transformed pending routes with prefixed names
      */
     public function transform(Collection $pendingRoutes): Collection
@@ -45,7 +46,7 @@ class HandleGroupNamePrefix implements PendingRouteTransformer
         $pendingRoutes->each(function (PendingRoute $pendingRoute) {
             $groupAttribute = $pendingRoute->getAttribute(Group::class);
 
-            if (! $groupAttribute instanceof Group) {
+            if (!$groupAttribute instanceof Group) {
                 return;
             }
 
@@ -60,7 +61,7 @@ class HandleGroupNamePrefix implements PendingRouteTransformer
                     return;
                 }
 
-                $action->name = $namePrefix.$action->name;
+                $action->name = $namePrefix . $action->name;
             });
         });
 

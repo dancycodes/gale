@@ -35,7 +35,8 @@ class HandlePrefixAttribute implements PendingRouteTransformer
      * declared prefix. The replacement is applied to the beginning of each
      * action URI, stripping leading/trailing slashes for consistent formatting.
      *
-     * @param  Collection<int, PendingRoute>  $pendingRoutes  Pending routes to transform
+     * @param Collection<int, PendingRoute> $pendingRoutes Pending routes to transform
+     *
      * @return Collection<int, PendingRoute> Transformed pending routes with applied prefixes
      */
     public function transform(Collection $pendingRoutes): Collection
@@ -43,7 +44,7 @@ class HandlePrefixAttribute implements PendingRouteTransformer
         $pendingRoutes->each(function (PendingRoute $pendingRoute) {
             $prefixAttribute = $pendingRoute->getAttribute(Prefix::class);
 
-            if (! $prefixAttribute instanceof Prefix) {
+            if (!$prefixAttribute instanceof Prefix) {
                 return;
             }
 
@@ -59,13 +60,13 @@ class HandlePrefixAttribute implements PendingRouteTransformer
                 if ($controllerUri === '' || $actionUri === $controllerUri) {
                     // Index/invoke method: action URI is just the controller URI
                     $action->uri = $prefix;
-                } elseif (str_starts_with($actionUri, $controllerUri.'/')) {
+                } elseif (str_starts_with($actionUri, $controllerUri . '/')) {
                     // Method URI: replace the controller segment prefix
                     $methodSegment = substr($actionUri, strlen($controllerUri) + 1);
-                    $action->uri = $prefix.'/'.$methodSegment;
+                    $action->uri = $prefix . '/' . $methodSegment;
                 } else {
                     // Fallback: prepend prefix to whatever URI the action has
-                    $action->uri = $prefix.'/'.ltrim($actionUri, '/');
+                    $action->uri = $prefix . '/' . ltrim($actionUri, '/');
                 }
             });
         });

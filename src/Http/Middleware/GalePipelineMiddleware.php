@@ -28,7 +28,7 @@ class GalePipelineMiddleware
      * Runs registered before-hooks for Gale requests, then delegates to the next
      * middleware/controller. After-hooks are run inside GaleResponse::toResponse().
      *
-     * @param  \Closure(\Illuminate\Http\Request): (\Symfony\Component\HttpFoundation\Response)  $next
+     * @param \Closure(\Illuminate\Http\Request): (\Symfony\Component\HttpFoundation\Response) $next
      */
     public function handle(Request $request, Closure $next): Response
     {

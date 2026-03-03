@@ -34,7 +34,8 @@ class HandleUriAttribute implements PendingRouteTransformer
      * then replaces the method-specific portion with the custom URI from the attribute.
      * Strips leading slashes from the custom URI to prevent double-slash paths.
      *
-     * @param  Collection<int, PendingRoute>  $pendingRoutes  Pending routes to transform
+     * @param Collection<int, PendingRoute> $pendingRoutes Pending routes to transform
+     *
      * @return Collection<int, PendingRoute> Transformed pending routes with custom URI segments
      */
     public function transform(Collection $pendingRoutes): Collection
@@ -58,11 +59,11 @@ class HandleUriAttribute implements PendingRouteTransformer
             $pendingRoute->actions->each(function (PendingRouteAction $action) use ($controllerBase) {
                 $routeAttribute = $action->getRouteAttribute();
 
-                if (! $routeAttribute instanceof Route) {
+                if (!$routeAttribute instanceof Route) {
                     return;
                 }
 
-                if (! $routeAttribute->uri) {
+                if (!$routeAttribute->uri) {
                     return;
                 }
 
@@ -72,7 +73,7 @@ class HandleUriAttribute implements PendingRouteTransformer
                 if ($controllerBase === '') {
                     $action->uri = $customSegment;
                 } else {
-                    $action->uri = $controllerBase.'/'.$customSegment;
+                    $action->uri = $controllerBase . '/' . $customSegment;
                 }
             });
         });

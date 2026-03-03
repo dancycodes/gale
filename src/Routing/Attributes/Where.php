@@ -41,8 +41,8 @@ class Where implements DiscoveryAttribute
     /**
      * Initialize route parameter constraint attribute
      *
-     * @param  string  $param  Route parameter name to constrain
-     * @param  string  $constraint  Regular expression pattern for validation
+     * @param string $param Route parameter name to constrain
+     * @param string $constraint Regular expression pattern for validation
      */
     public function __construct(
         public string $param,
