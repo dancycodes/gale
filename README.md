@@ -1,5 +1,7 @@
 # Laravel Gale
 
+[![CI](https://github.com/dancycodes/gale/actions/workflows/ci.yml/badge.svg)](https://github.com/dancycodes/gale/actions/workflows/ci.yml)
+[![Latest Version](https://img.shields.io/packagist/v/dancycodes/gale?style=flat-square&label=packagist)](https://packagist.org/packages/dancycodes/gale)
 [![PHP Version](https://img.shields.io/badge/PHP-8.2%2B-777BB4?style=flat-square&logo=php)](https://php.net)
 [![Laravel Version](https://img.shields.io/badge/Laravel-11%2B%20%7C%2012%2B-FF2D20?style=flat-square&logo=laravel)](https://laravel.com)
 [![Alpine.js](https://img.shields.io/badge/Alpine.js-3.x-8BC0D0?style=flat-square&logo=alpine.js)](https://alpinejs.dev)
@@ -14,10 +16,13 @@ This README documents both:
 - **Laravel Gale** -- The PHP backend package (`dancycodes/gale`)
 - **Alpine Gale** -- The Alpine.js frontend plugin (bundled with Laravel Gale)
 
+**Full documentation:** [`docs/README.md`](docs/README.md) | [Getting Started](docs/getting-started.md) | [Backend API](docs/backend-api.md) | [Frontend API](docs/frontend-api.md)
+
 ---
 
 ## Table of Contents
 
+- [Requirements](#requirements)
 - [Quick Start](#quick-start)
 - [Installation](#installation)
 - [How It Works](#how-it-works)
@@ -58,6 +63,7 @@ This README documents both:
   - [Message Display](#message-display)
   - [Polling (x-interval)](#polling-x-interval)
   - [Confirmation Dialogs](#confirmation-dialogs)
+- [Configuration Reference](#configuration-reference)
 - [Advanced Topics](#advanced-topics)
   - [DOM Patching Modes](#dom-patching-modes)
   - [View Transitions API](#view-transitions-api)
@@ -66,13 +72,24 @@ This README documents both:
 - [API Reference](#api-reference)
 - [Troubleshooting](#troubleshooting)
 - [Testing](#testing)
+- [Contributing](#contributing)
 - [License](#license)
+
+---
+
+## Requirements
+
+- **PHP** 8.2 or higher
+- **Laravel** 11 or 12
+- **Alpine.js** 3.x (bundled -- no separate install needed)
+
+No Node.js or npm required for basic usage. `@gale` serves the pre-built JS bundle from `public/vendor/gale/`.
 
 ---
 
 ## Quick Start
 
-A complete counter in under 20 lines:
+A complete reactive counter in under 20 lines:
 
 **routes/web.php:**
 
@@ -125,6 +142,7 @@ Add `@gale` to your layout's `<head>`:
 - CSRF meta tag
 - Alpine.js (v3) with the Morph plugin
 - The Alpine Gale plugin
+- Debug panel (when `APP_DEBUG=true`)
 
 ### Existing Alpine.js Projects
 
@@ -357,6 +375,14 @@ gale()->state('user.email', 'new@example.com');
 gale()->state('defaults', ['theme' => 'dark'], ['onlyIfMissing' => true]);
 ```
 
+#### patchState()
+
+Alias for `state()` when passing an array -- preferred for explicit multi-key patches:
+
+```php
+gale()->patchState(['count' => 1, 'updated' => true]);
+```
+
 #### forget()
 
 Remove state properties (sends `null` per RFC 7386):
@@ -386,6 +412,23 @@ Clear all messages:
 
 ```php
 gale()->clearMessages();
+```
+
+#### flash()
+
+Deliver flash data to both the session and the `_flash` Alpine state key in one call:
+
+```php
+gale()->flash('status', 'Your account has been updated.');
+gale()->flash(['status' => 'ok', 'message' => 'Saved!']);
+```
+
+In the view, display flash reactively:
+
+```html
+<div x-data="{ _flash: {} }" x-sync="['_flash']">
+    <div x-show="_flash.status" x-text="_flash.status" class="alert"></div>
+</div>
 ```
 
 ### DOM Manipulation
@@ -588,6 +631,15 @@ gale()->js('console.log("Hello from server")');
 gale()->js('myApp.showNotification("Saved!")');
 ```
 
+#### debug()
+
+Send debug data to the Gale debug panel (dev mode only):
+
+```php
+gale()->debug('payload', $request->all());
+gale()->debug(['user' => $user, 'state' => $state]);
+```
+
 ### Component Targeting
 
 Target specific named Alpine components from the backend:
@@ -668,6 +720,12 @@ Include the JavaScript bundle and CSRF meta tag:
 <head>
     @gale
 </head>
+```
+
+Accepts optional options:
+
+```blade
+@gale(['nonce' => config('gale.csp_nonce')])
 ```
 
 #### @fragment / @endfragment
@@ -783,6 +841,8 @@ Optional attribute-based route discovery:
 ```php
 use Dancycodes\Gale\Routing\Attributes\Route;
 use Dancycodes\Gale\Routing\Attributes\Prefix;
+use Dancycodes\Gale\Routing\Attributes\Group;
+use Dancycodes\Gale\Routing\Attributes\Middleware;
 
 #[Prefix('/admin')]
 class UserController extends Controller
@@ -793,6 +853,21 @@ class UserController extends Controller
     #[Route('GET', '/users/{id}', name: 'admin.users.show')]
     public function show($id) { }
 }
+
+// Group attribute (prefix + middleware + route name prefix in one)
+#[Group(prefix: '/api', middleware: ['auth'], as: 'api.')]
+class ApiController extends Controller
+{
+    #[Route('GET', '/data')]
+    public function data() { }
+}
+```
+
+List discovered routes:
+
+```bash
+php artisan gale:routes
+php artisan gale:routes --json
 ```
 
 ---
@@ -832,6 +907,8 @@ CSRF tokens are automatically injected for all non-GET methods. No manual token 
     retryInterval: 1000,
     retryMaxCount: 10,
     requestCancellation: true,
+    debounce: 300,
+    throttle: 500,
     onProgress: (percent) => console.log(percent)
 })">Save</button>
 ```
@@ -849,7 +926,9 @@ CSRF tokens are automatically injected for all non-GET methods. No manual token 
 | `retryMaxWaitMs` | number | `30000` | Maximum retry delay (ms) |
 | `retryMaxCount` | number | `10` | Maximum retry attempts |
 | `requestCancellation` | bool | `false` | Cancel previous in-flight request |
-| `onProgress` | function | -- | Upload progress callback |
+| `debounce` | number | -- | Trailing-edge debounce (ms) |
+| `throttle` | number | -- | Leading-edge throttle (ms) |
+| `onProgress` | function | -- | Upload progress callback (0-100) |
 
 ### State Synchronization (x-sync)
 
@@ -975,6 +1054,12 @@ Enable SPA navigation on links and forms:
 <form action="/search" method="GET" x-navigate>
     <input name="q" type="text" />
     <button type="submit">Search</button>
+</form>
+
+<!-- POST form navigation (PRG pattern) -->
+<form action="/submit" method="POST" x-navigate>
+    <input name="name" type="text" />
+    <button type="submit">Submit</button>
 </form>
 ```
 
@@ -1154,6 +1239,74 @@ Run expressions at configurable intervals:
 
 ---
 
+## Configuration Reference
+
+After running `php artisan vendor:publish --tag=gale-config`, edit `config/gale.php`:
+
+```php
+return [
+    // Default response mode: 'http' (JSON) or 'sse' (Server-Sent Events)
+    'mode' => env('GALE_MODE', 'http'),
+
+    // Intercept dd() and dump() during Gale requests, render in debug panel
+    'debug' => env('GALE_DEBUG', false),
+
+    // Sanitize HTML in gale-patch-elements events (XSS protection)
+    'sanitize_html' => env('GALE_SANITIZE_HTML', true),
+
+    // Allow <script> tags in patched HTML (false = strip scripts)
+    'allow_scripts' => env('GALE_ALLOW_SCRIPTS', false),
+
+    // Inject HTML comment markers for conditional/loop Blade blocks
+    // Improves morph accuracy; disable in production to reduce payload
+    'morph_markers' => env('GALE_MORPH_MARKERS', true),
+
+    // Content Security Policy nonce: null | 'auto' | '<nonce-string>'
+    'csp_nonce' => env('GALE_CSP_NONCE', null),
+
+    // Security headers added to all Gale responses
+    'headers' => [
+        'x_content_type_options' => 'nosniff',
+        'x_frame_options' => 'SAMEORIGIN',
+        'cache_control' => 'no-store, no-cache, must-revalidate',
+        'custom' => [],
+    ],
+
+    // Open-redirect prevention
+    'redirect' => [
+        'allowed_domains' => [],  // e.g. ['payment.stripe.com', '*.myapp.com']
+        'allow_external' => false,
+        'log_blocked' => true,
+    ],
+
+    // Attribute-based route discovery (opt-in)
+    'route_discovery' => [
+        'enabled' => false,
+        'conventions' => true,  // Auto-discover index/show/create/store/edit/update/destroy
+        'discover_controllers_in_directory' => [
+            // app_path('Http/Controllers'),
+        ],
+        'discover_views_in_directory' => [],
+        'pending_route_transformers' => [
+            ...Dancycodes\Gale\Routing\Config::defaultRouteTransformers(),
+        ],
+    ],
+];
+```
+
+**Environment variables:**
+
+| Variable | Default | Description |
+|---|---|---|
+| `GALE_MODE` | `http` | Default response mode (`http` or `sse`) |
+| `GALE_DEBUG` | `false` | Enable debug panel and dd()/dump() interception |
+| `GALE_SANITIZE_HTML` | `true` | Sanitize patched HTML for XSS |
+| `GALE_ALLOW_SCRIPTS` | `false` | Allow `<script>` tags in patched HTML |
+| `GALE_MORPH_MARKERS` | `true` | Inject Blade morph anchor comments |
+| `GALE_CSP_NONCE` | `null` | CSP nonce value |
+
+---
+
 ## Advanced Topics
 
 <details>
@@ -1279,7 +1432,42 @@ Alpine.gale.configure({
         initialDelay: 1000,      // Initial retry delay (ms)
         backoffMultiplier: 2,    // Exponential backoff multiplier
     },
+    redirect: {
+        allowedDomains: [],      // Trusted external redirect domains
+        allowExternal: false,    // Allow all external redirects
+        logBlocked: true,        // Log blocked redirects
+    },
 });
+```
+
+</details>
+
+<details>
+<summary><strong>Morph Lifecycle Hooks</strong></summary>
+
+Register callbacks to run before/after DOM morphing. Useful for preserving third-party library state (Chart.js, GSAP, TipTip, Sortable):
+
+```javascript
+const cleanup = Alpine.gale.onMorph({
+    beforeUpdate(el, toEl) {
+        // Called before element is updated
+        // Return false to prevent the update
+    },
+    afterUpdate(el) {
+        // Called after element is updated
+        myChart.update();
+    },
+    beforeRemove(el) {
+        // Called before element is removed
+        // Return false to prevent removal
+    },
+    afterRemove(el) {
+        // Cleanup after removal
+    },
+});
+
+// Remove hooks when component is destroyed
+cleanup();
 ```
 
 </details>
@@ -1294,9 +1482,12 @@ Alpine.gale.configure({
 | Method | Description |
 |---|---|
 | `state($key, $value, $options)` | Set state to merge into component |
+| `patchState($state)` | Set multiple state keys (alias for `state(array)`) |
 | `forget($keys)` | Remove state keys |
 | `messages($messages)` | Set messages state |
 | `clearMessages()` | Clear messages |
+| `flash($key, $value)` | Flash to session + Alpine `_flash` state |
+| `debug($label, $data)` | Send debug data to debug panel |
 | `view($view, $data, $options, $web)` | Render and patch Blade view |
 | `fragment($view, $fragment, $data, $options)` | Render named fragment |
 | `fragments($fragments)` | Render multiple fragments |
@@ -1358,7 +1549,7 @@ Alpine.gale.configure({
 | `$action.patch(url, options?)` | PATCH with auto CSRF |
 | `$action.delete(url, options?)` | DELETE with auto CSRF |
 | `$gale` | Global connection state |
-| `$fetching()` | Element loading state |
+| `$fetching()` | Element loading state (call as function) |
 | `$navigate(url, options?)` | Programmatic navigation |
 | `$components` | Component registry API |
 | `$invoke(name, method, ...args)` | Invoke component method |
@@ -1392,27 +1583,6 @@ Alpine.gale.configure({
 
 </details>
 
-<details>
-<summary><strong>Backend Configuration (config/gale.php)</strong></summary>
-
-```php
-return [
-    // Default response mode: 'http' or 'sse'
-    'mode' => env('GALE_MODE', 'http'),
-
-    'route_discovery' => [
-        'enabled' => false,
-        'discover_controllers_in_directory' => [],
-        'discover_views_in_directory' => [],
-        'pending_route_transformers' => [
-            ...Dancycodes\Gale\Routing\Config::defaultRouteTransformers(),
-        ],
-    ],
-];
-```
-
-</details>
-
 ---
 
 ## Troubleshooting
@@ -1421,10 +1591,14 @@ return [
 |---|---|---|
 | "Multiple instances of Alpine" | Duplicate Alpine.js loaded | Remove existing Alpine, use `@gale` only |
 | `$action` is undefined | Magic used outside `x-data` | Wrap in `x-data` element |
-| CSRF 419 error | Token expired | Refresh page or use meta token |
+| CSRF 419 error | Token expired or missing | Verify `@gale` is in `<head>` |
 | State not updating | Key mismatch | Check `x-data` property names match server keys |
-| Navigation not working | Missing directive | Add `x-navigate` to links |
+| Navigation not working | Missing directive | Add `x-navigate` to links or container |
 | Messages not showing | Wrong key | Ensure `x-message` key matches server message key |
+| Counter not updating | Missing `x-sync` | Add `x-sync` to `x-data` element to send state |
+| JSON shown instead of page | Missing `web: true` | Add `web: true` to `gale()->view()` for page routes |
+
+For in-depth troubleshooting, see [Debug & Troubleshooting](docs/debug-troubleshooting.md).
 
 ---
 
@@ -1435,6 +1609,12 @@ return [
 cd packages/dancycodes/gale
 vendor/bin/phpunit
 
+# Run only unit tests
+vendor/bin/pest --testsuite Unit
+
+# Run only feature tests
+vendor/bin/pest --testsuite Feature
+
 # Static analysis
 vendor/bin/phpstan analyse
 
@@ -1444,6 +1624,20 @@ vendor/bin/pint
 # JavaScript tests (from project root)
 npm test
 ```
+
+---
+
+## Contributing
+
+Contributions are welcome. To contribute:
+
+1. Fork the repository and create a feature branch
+2. Write tests for any new functionality
+3. Run the full test suite: `vendor/bin/pest && vendor/bin/phpstan analyse`
+4. Format code: `vendor/bin/pint`
+5. Submit a pull request with a clear description of the change
+
+Report bugs via [GitHub Issues](https://github.com/dancycodes/gale/issues).
 
 ---
 
