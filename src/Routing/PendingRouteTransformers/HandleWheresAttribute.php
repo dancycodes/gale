@@ -33,7 +33,8 @@ class HandleWheresAttribute implements PendingRouteTransformer
      * constraints. When multiple Where attributes target the same parameter, later
      * constraints override earlier ones.
      *
-     * @param  Collection<int, PendingRoute>  $pendingRoutes  Pending routes to transform
+     * @param Collection<int, PendingRoute> $pendingRoutes Pending routes to transform
+     *
      * @return Collection<int, PendingRoute> Transformed pending routes with parameter constraints
      */
     public function transform(Collection $pendingRoutes): Collection
@@ -42,18 +43,16 @@ class HandleWheresAttribute implements PendingRouteTransformer
             $pendingRoute->actions->each(function (PendingRouteAction $action) use ($pendingRoute) {
                 // Apply ALL class-level Where attributes (IS_REPEATABLE supports multiples)
                 foreach ($pendingRoute->class->getAttributes(Where::class, ReflectionAttribute::IS_INSTANCEOF) as $attr) {
+                    /** @var Where $whereAttribute */
                     $whereAttribute = $attr->newInstance();
-                    if ($whereAttribute instanceof Where) {
-                        $action->addWhere($whereAttribute);
-                    }
+                    $action->addWhere($whereAttribute);
                 }
 
                 // Apply ALL method-level Where attributes (override class-level for same param)
                 foreach ($action->method->getAttributes(Where::class, ReflectionAttribute::IS_INSTANCEOF) as $attr) {
+                    /** @var Where $whereAttribute */
                     $whereAttribute = $attr->newInstance();
-                    if ($whereAttribute instanceof Where) {
-                        $action->addWhere($whereAttribute);
-                    }
+                    $action->addWhere($whereAttribute);
                 }
             });
         });

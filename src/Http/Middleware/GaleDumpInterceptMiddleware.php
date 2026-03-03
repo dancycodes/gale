@@ -51,13 +51,13 @@ class GaleDumpInterceptMiddleware
      * mode is enabled). Captures VarDumper output and injects it as debug events
      * into the existing Gale JSON response.
      *
-     * @param  \Closure(\Illuminate\Http\Request): (\Symfony\Component\HttpFoundation\Response)  $next
+     * @param \Closure(\Illuminate\Http\Request): (\Symfony\Component\HttpFoundation\Response) $next
      */
     public function handle(Request $request, Closure $next): Response
     {
         // BR-057.7: Only active when gale.debug is true AND this is a Gale request
         /** @phpstan-ignore method.notFound (isGale is a Request macro) */
-        if (! config('gale.debug', false) || ! $request->isGale()) {
+        if (!config('gale.debug', false) || !$request->isGale()) {
             return $next($request);
         }
 
@@ -75,10 +75,11 @@ class GaleDumpInterceptMiddleware
 
             // Capture any buffered dump() output
             $output = ob_get_clean();
+            $output = ($output === false) ? '' : $output;
 
-            if (! empty(trim($output ?? '')) && $this->looksLikeVarDumper($output ?? '')) {
+            if (!empty(trim($output)) && $this->looksLikeVarDumper($output)) {
                 // Inject dump events into the already-built response (BR-057.1)
-                return $this->injectDumpIntoResponse($output ?? '', $response);
+                return $this->injectDumpIntoResponse($output, $response);
             }
 
             return $response;
@@ -114,20 +115,20 @@ class GaleDumpInterceptMiddleware
      *
      * This method is public because it's called via register_shutdown_function().
      *
-     * @param  \Illuminate\Http\Request  $request  The original Gale request
+     * @param \Illuminate\Http\Request $request The original Gale request
      */
     public function handleShutdown(Request $request): void
     {
         // Only act if the middleware was still active when exit() was called
         // (meaning dd() was the cause — not a normal completion path)
-        if (! $request->attributes->get('_gale_dump_intercept_active', false)) {
+        if (!$request->attributes->get('_gale_dump_intercept_active', false)) {
             return;
         }
 
         // Capture all remaining output buffers (dd() may leave multiple levels)
         $output = '';
         while (ob_get_level() > 0) {
-            $output = ob_get_clean().$output;
+            $output = ob_get_clean() . $output;
         }
 
         if (empty(trim($output))) {
@@ -135,7 +136,7 @@ class GaleDumpInterceptMiddleware
         }
 
         // Only handle if this looks like VarDumper HTML output (BR-057.8)
-        if (! $this->looksLikeVarDumper($output)) {
+        if (!$this->looksLikeVarDumper($output)) {
             return;
         }
 
@@ -145,7 +146,7 @@ class GaleDumpInterceptMiddleware
             return;
         }
 
-        if (! headers_sent()) {
+        if (!headers_sent()) {
             header('Content-Type: application/json');
             header('X-Gale-Response: true');
             header('Cache-Control: no-cache');
@@ -164,14 +165,15 @@ class GaleDumpInterceptMiddleware
      * For non-JSON responses (SSE mode), returns the response unchanged. SSE streaming
      * handles dd() separately via GaleResponse::handleShutdownOutput().
      *
-     * @param  string    $html      Raw VarDumper HTML from output buffer
-     * @param  Response  $response  The already-built Gale response
-     * @return Response  Modified response with dump event prepended
+     * @param string $html Raw VarDumper HTML from output buffer
+     * @param Response $response The already-built Gale response
+     *
+     * @return Response Modified response with dump event prepended
      */
     private function injectDumpIntoResponse(string $html, Response $response): Response
     {
         // Only modify JSON responses (HTTP mode)
-        if (! ($response instanceof JsonResponse)) {
+        if (!($response instanceof JsonResponse)) {
             return $response;
         }
 
@@ -180,7 +182,7 @@ class GaleDumpInterceptMiddleware
         // Decode the existing events array and prepend the dump event
         $data = $response->getData(true);
 
-        if (! is_array($data) || ! isset($data['events']) || ! is_array($data['events'])) {
+        if (!is_array($data) || !isset($data['events']) || !is_array($data['events'])) {
             $data = ['events' => []];
         }
 
@@ -201,7 +203,8 @@ class GaleDumpInterceptMiddleware
      * Builds a minimal Gale JSON response: { events: [{ type: 'gale-debug-dump', ... }] }
      * Used by handleShutdown() for dd() calls. Exposed as public for unit testing.
      *
-     * @param  string  $html  Raw VarDumper HTML (may be oversized — truncated internally)
+     * @param string $html Raw VarDumper HTML (may be oversized — truncated internally)
+     *
      * @return string|null JSON string, or null if HTML is empty after processing
      */
     public function buildDumpJson(string $html): ?string
@@ -229,7 +232,7 @@ class GaleDumpInterceptMiddleware
      * `Sfdump` JavaScript initialization function. Using these as markers
      * avoids injecting arbitrary buffered output as debug events.
      *
-     * @param  string  $content  Output buffer content
+     * @param string $content Output buffer content
      */
     private function looksLikeVarDumper(string $content): bool
     {
@@ -241,14 +244,15 @@ class GaleDumpInterceptMiddleware
     /**
      * Truncate HTML if it exceeds the 1MB size limit
      *
-     * @param  string  $html  Raw HTML content
+     * @param string $html Raw HTML content
+     *
      * @return string HTML content, truncated to MAX_DUMP_SIZE if needed
      */
     private function truncateIfOversized(string $html): string
     {
         if (strlen($html) > self::MAX_DUMP_SIZE) {
             return substr($html, 0, self::MAX_DUMP_SIZE)
-                .'<p style="color:orange;font-weight:bold;">[... output truncated — exceeded 1MB limit ...]</p>';
+                . '<p style="color:orange;font-weight:bold;">[... output truncated — exceeded 1MB limit ...]</p>';
         }
 
         return $html;

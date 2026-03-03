@@ -48,7 +48,7 @@ class AddGaleSecurityHeaders
      * security headers are applied according to the config. Non-Gale responses
      * are returned unmodified (BR-022.8).
      *
-     * @param  \Closure(\Illuminate\Http\Request): (\Symfony\Component\HttpFoundation\Response)  $next
+     * @param \Closure(\Illuminate\Http\Request): (\Symfony\Component\HttpFoundation\Response) $next
      */
     public function handle(Request $request, Closure $next): Response
     {
@@ -56,7 +56,7 @@ class AddGaleSecurityHeaders
 
         // BR-022.8: Only add headers to Gale responses.
         // X-Gale-Response is set by GaleResponse::toResponse() on all Gale outputs.
-        if (! $response->headers->has('X-Gale-Response')) {
+        if (!$response->headers->has('X-Gale-Response')) {
             return $response;
         }
 
@@ -81,7 +81,7 @@ class AddGaleSecurityHeaders
         }
 
         // Regular SSE mode (non-streaming): check Content-Type header
-        $contentType = $response->headers->get('Content-Type', '');
+        $contentType = $response->headers->get('Content-Type', '') ?? '';
 
         return str_contains($contentType, 'text/event-stream');
     }
@@ -93,22 +93,23 @@ class AddGaleSecurityHeaders
      * Invalid header values (containing control characters or forbidden chars) are
      * skipped with a logged warning, per the edge case in the spec.
      *
-     * @param  \Symfony\Component\HttpFoundation\Response  $response  Gale response to mutate
-     * @param  bool  $isSSE  Whether the response is an SSE streaming response
+     * @param \Symfony\Component\HttpFoundation\Response $response Gale response to mutate
+     * @param bool $isSSE Whether the response is an SSE streaming response
      */
     protected function applySecurityHeaders(Response $response, bool $isSSE): void
     {
-        $config = config('gale.headers', []);
+        /** @var array<string, mixed> $config */
+        $config = config('gale.headers', []) ?: [];
 
         // --- X-Content-Type-Options (BR-022.1) ---
         $xContentType = $this->resolveConfigValue($config, 'x_content_type_options', 'nosniff');
-        if ($xContentType !== false && ! $response->headers->has('X-Content-Type-Options')) {
+        if ($xContentType !== false && !$response->headers->has('X-Content-Type-Options')) {
             $this->setHeaderSafe($response, 'X-Content-Type-Options', $xContentType);
         }
 
         // --- X-Frame-Options (BR-022.2) ---
         $xFrameOptions = $this->resolveConfigValue($config, 'x_frame_options', 'SAMEORIGIN');
-        if ($xFrameOptions !== false && ! $response->headers->has('X-Frame-Options')) {
+        if ($xFrameOptions !== false && !$response->headers->has('X-Frame-Options')) {
             $this->setHeaderSafe($response, 'X-Frame-Options', $xFrameOptions);
         }
 
@@ -136,22 +137,23 @@ class AddGaleSecurityHeaders
         }
 
         // --- Pragma: no-cache (BR-022.10 — HTTP/1.0 proxy compatibility) ---
-        if (! $response->headers->has('Pragma')) {
+        if (!$response->headers->has('Pragma')) {
             $this->setHeaderSafe($response, 'Pragma', 'no-cache');
         }
 
         // --- X-Accel-Buffering: no — SSE only (BR-022.4) ---
-        if ($isSSE && ! $response->headers->has('X-Accel-Buffering')) {
+        if ($isSSE && !$response->headers->has('X-Accel-Buffering')) {
             $this->setHeaderSafe($response, 'X-Accel-Buffering', 'no');
         }
 
         // --- Custom headers (BR-022.7) ---
-        $custom = isset($config['custom']) && is_array($config['custom']) ? $config['custom'] : [];
+        $customRaw = $config['custom'] ?? [];
+        $custom = is_array($customRaw) ? $customRaw : [];
         foreach ($custom as $name => $value) {
-            if (! is_string($name) || ! is_string($value)) {
+            if (!is_string($name) || !is_string($value)) {
                 continue;
             }
-            if (! $response->headers->has($name)) {
+            if (!$response->headers->has($name)) {
                 $this->setHeaderSafe($response, $name, $value);
             }
         }
@@ -163,14 +165,15 @@ class AddGaleSecurityHeaders
      * Returns false if the config explicitly disables the header (false value or empty string).
      * Returns the config value when set, or the given $default when not configured.
      *
-     * @param  array<string, mixed>  $config  The resolved gale.headers config array
-     * @param  string  $key  The config key within gale.headers
-     * @param  string  $default  The default header value when not configured
+     * @param array<string, mixed> $config The resolved gale.headers config array
+     * @param string $key The config key within gale.headers
+     * @param string $default The default header value when not configured
+     *
      * @return string|false The header value to use, or false to skip the header
      */
     protected function resolveConfigValue(array $config, string $key, string $default): string|false
     {
-        if (! array_key_exists($key, $config)) {
+        if (!array_key_exists($key, $config)) {
             return $default;
         }
 
@@ -181,7 +184,7 @@ class AddGaleSecurityHeaders
             return false;
         }
 
-        if (! is_string($value)) {
+        if (!is_string($value)) {
             return $default;
         }
 
@@ -194,9 +197,9 @@ class AddGaleSecurityHeaders
      * HTTP header values must not contain control characters (CR, LF, NUL).
      * Invalid values are logged as warnings and skipped (edge case in spec).
      *
-     * @param  \Symfony\Component\HttpFoundation\Response  $response  Target response
-     * @param  string  $name  Header name
-     * @param  string  $value  Header value to set
+     * @param \Symfony\Component\HttpFoundation\Response $response Target response
+     * @param string $name Header name
+     * @param string $value Header value to set
      */
     protected function setHeaderSafe(Response $response, string $name, string $value): void
     {

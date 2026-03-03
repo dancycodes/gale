@@ -3,7 +3,6 @@
 namespace Dancycodes\Gale\Routing\Attributes;
 
 use Attribute;
-use Illuminate\Support\Arr;
 
 /**
  * Middleware Route Attribute
@@ -35,6 +34,6 @@ class Middleware implements DiscoveryAttribute
      */
     public function __construct(string ...$middleware)
     {
-        $this->middleware = Arr::wrap($middleware);
+        $this->middleware = array_values($middleware);
     }
 }

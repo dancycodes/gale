@@ -28,8 +28,8 @@ class GaleDownloadServeController extends Controller
     /**
      * Serve a file download for a signed Gale download token
      *
-     * @param  Request  $request
-     * @param  string  $token  Signed token (token.signature)
+     * @param string $token Signed token (token.signature)
+     *
      * @return \Symfony\Component\HttpFoundation\Response
      */
     public function serve(Request $request, string $token): mixed
@@ -44,21 +44,26 @@ class GaleDownloadServeController extends Controller
         $signature = substr($token, $dotPos + 1);
 
         // Verify HMAC signature
-        $expectedSig = hash_hmac('sha256', $rawToken, config('app.key'));
-        if (! hash_equals($expectedSig, $signature)) {
+        $appKey = config('app.key');
+        $expectedSig = hash_hmac('sha256', $rawToken, is_string($appKey) ? $appKey : '');
+        if (!hash_equals($expectedSig, $signature)) {
             abort(403, 'Download token signature mismatch.');
         }
 
         // Retrieve payload from cache
-        $cacheKey = 'gale_download:'.$rawToken;
-        $payload = Cache::get($cacheKey);
+        $cacheKey = 'gale_download:' . $rawToken;
+        $payloadRaw = Cache::get($cacheKey);
 
-        if ($payload === null) {
+        if ($payloadRaw === null || !is_array($payloadRaw)) {
             abort(404, 'Download token expired or not found.');
         }
 
+        /** @var array<string, mixed> $payload */
+        $payload = $payloadRaw;
+
         // Verify server-side expiry (belt-and-suspenders beyond cache TTL)
-        if (! isset($payload['expires']) || time() > $payload['expires']) {
+        $expires = isset($payload['expires']) && is_int($payload['expires']) ? $payload['expires'] : null;
+        if ($expires === null || time() > $expires) {
             Cache::forget($cacheKey);
             abort(410, 'Download token has expired.');
         }
@@ -66,11 +71,11 @@ class GaleDownloadServeController extends Controller
         // One-time use: remove from cache immediately
         Cache::forget($cacheKey);
 
-        $filename = $payload['filename'] ?? 'download';
-        $mimeType = $payload['mime'] ?? null;
-        $filePath = $payload['path'] ?? null;
-        $content = $payload['content'] ?? null;
-        $isTmp = $payload['is_tmp'] ?? false;
+        $filename = isset($payload['filename']) && is_string($payload['filename']) ? $payload['filename'] : 'download';
+        $mimeType = isset($payload['mime']) && is_string($payload['mime']) ? $payload['mime'] : null;
+        $filePath = isset($payload['path']) && is_string($payload['path']) ? $payload['path'] : null;
+        $content = isset($payload['content']) && is_string($payload['content']) ? $payload['content'] : null;
+        $isTmp = isset($payload['is_tmp']) && (bool) $payload['is_tmp'];
 
         // Auto-detect MIME type if not provided
         if ($mimeType === null) {
@@ -95,11 +100,10 @@ class GaleDownloadServeController extends Controller
      *
      * Uses Laravel's StreamedResponse to avoid loading the entire file into memory (BR-039.7).
      *
-     * @param  string  $filePath  Absolute path to the file
-     * @param  string  $filename  Download filename for the browser
-     * @param  string  $mimeType  Content-Type header value
-     * @param  bool  $deleteAfter  Whether to delete the file after serving (for temp files)
-     * @return \Symfony\Component\HttpFoundation\StreamedResponse
+     * @param string $filePath Absolute path to the file
+     * @param string $filename Download filename for the browser
+     * @param string $mimeType Content-Type header value
+     * @param bool $deleteAfter Whether to delete the file after serving (for temp files)
      */
     protected function streamFile(string $filePath, string $filename, string $mimeType, bool $deleteAfter = false): StreamedResponse
     {
@@ -112,7 +116,7 @@ class GaleDownloadServeController extends Controller
                     return;
                 }
 
-                while (! feof($handle)) {
+                while (!feof($handle)) {
                     echo fread($handle, 8192);
                     flush();
                 }
@@ -133,10 +137,9 @@ class GaleDownloadServeController extends Controller
     /**
      * Stream raw content string as a download
      *
-     * @param  string  $content   Raw file content
-     * @param  string  $filename  Download filename for the browser
-     * @param  string  $mimeType  Content-Type header value
-     * @return \Symfony\Component\HttpFoundation\StreamedResponse
+     * @param string $content Raw file content
+     * @param string $filename Download filename for the browser
+     * @param string $mimeType Content-Type header value
      */
     protected function streamContent(string $content, string $filename, string $mimeType): StreamedResponse
     {
@@ -157,11 +160,6 @@ class GaleDownloadServeController extends Controller
      *
      * Sets Content-Disposition: attachment, Content-Type, and optional Content-Length.
      * Filename is URL-encoded in the RFC 5987 extended parameter for Unicode support.
-     *
-     * @param  StreamedResponse  $response
-     * @param  string  $filename
-     * @param  string  $mimeType
-     * @param  int|null  $contentLength
      */
     protected function applyDownloadHeaders(
         StreamedResponse $response,
@@ -189,9 +187,10 @@ class GaleDownloadServeController extends Controller
     /**
      * Auto-detect MIME type from filename extension or file path
      *
-     * @param  string  $filename  Download filename
-     * @param  string|null  $filePath  Absolute file path (for finfo detection)
-     * @param  string|null  $content  Raw content (not used for detection)
+     * @param string $filename Download filename
+     * @param string|null $filePath Absolute file path (for finfo detection)
+     * @param string|null $content Raw content (not used for detection)
+     *
      * @return string MIME type string
      */
     protected function detectMimeType(string $filename, ?string $filePath, ?string $content): string
@@ -212,24 +211,24 @@ class GaleDownloadServeController extends Controller
         $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
 
         return match ($ext) {
-            'pdf'  => 'application/pdf',
-            'csv'  => 'text/csv',
-            'txt'  => 'text/plain',
+            'pdf' => 'application/pdf',
+            'csv' => 'text/csv',
+            'txt' => 'text/plain',
             'json' => 'application/json',
-            'xml'  => 'application/xml',
-            'zip'  => 'application/zip',
-            'gz'   => 'application/gzip',
-            'tar'  => 'application/x-tar',
-            'xls'  => 'application/vnd.ms-excel',
+            'xml' => 'application/xml',
+            'zip' => 'application/zip',
+            'gz' => 'application/gzip',
+            'tar' => 'application/x-tar',
+            'xls' => 'application/vnd.ms-excel',
             'xlsx' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            'doc'  => 'application/msword',
+            'doc' => 'application/msword',
             'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-            'png'  => 'image/png',
+            'png' => 'image/png',
             'jpg', 'jpeg' => 'image/jpeg',
-            'gif'  => 'image/gif',
-            'svg'  => 'image/svg+xml',
-            'mp4'  => 'video/mp4',
-            'mp3'  => 'audio/mpeg',
+            'gif' => 'image/gif',
+            'svg' => 'image/svg+xml',
+            'mp4' => 'video/mp4',
+            'mp3' => 'audio/mpeg',
             default => 'application/octet-stream',
         };
     }

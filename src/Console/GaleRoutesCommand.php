@@ -79,7 +79,7 @@ class GaleRoutesCommand extends Command
         $routeCollection = app('router')->getRoutes();
 
         return collect($routeCollection->getRoutes())
-            ->filter(fn (Route $route) => ! empty($route->action['gale']))
+            ->filter(fn (Route $route) => !empty($route->action['gale']))
             ->map(fn (Route $route) => $this->formatRoute($route))
             ->values();
     }
@@ -96,15 +96,19 @@ class GaleRoutesCommand extends Command
         // Remove HEAD from methods (Laravel always adds HEAD alongside GET)
         $methods = array_filter($methods, fn (string $m) => $m !== 'HEAD');
 
+        /** @var array<string, mixed> $action */
         $action = $route->getAction();
-        $controller = $action['controller'] ?? null;
+        $controllerRaw = $action['controller'] ?? null;
+        $controller = is_string($controllerRaw) ? $controllerRaw : null;
 
         // Normalize controller@method format
-        if (is_array($action['uses'] ?? null)) {
-            [$class, $method] = $action['uses'];
-            $controller = $class.'@'.$method;
-        } elseif (is_string($action['uses'] ?? null)) {
-            $controller = $action['uses'];
+        $usesRaw = $action['uses'] ?? null;
+        if (is_array($usesRaw) && count($usesRaw) >= 2) {
+            $class = is_string($usesRaw[0]) ? $usesRaw[0] : '';
+            $method = is_string($usesRaw[1]) ? $usesRaw[1] : '';
+            $controller = $class . '@' . $method;
+        } elseif (is_string($usesRaw)) {
+            $controller = $usesRaw;
         }
 
         // Shorten controller namespace for readability in table view
@@ -114,7 +118,7 @@ class GaleRoutesCommand extends Command
 
         return [
             'method' => implode('|', array_values($methods)),
-            'uri' => '/'.$route->uri(),
+            'uri' => '/' . $route->uri(),
             'name' => $route->getName() ?? '—',
             'middleware' => implode(', ', $middleware) ?: '—',
             'action' => $shortController,
@@ -139,59 +143,63 @@ class GaleRoutesCommand extends Command
      *
      * All filters use AND logic — a route must pass every specified filter.
      *
-     * @param  Collection<int, array<string, mixed>>  $routes
+     * @param Collection<int, array<string, mixed>> $routes
+     *
      * @return Collection<int, array<string, mixed>>
+     *
+     * @phpstan-return Collection<int, array<string, mixed>>
      */
     protected function applyFilters(Collection $routes): Collection
     {
-        $method = $this->option('method');
-        $path = $this->option('path');
-        $name = $this->option('name');
-        $controller = $this->option('controller');
+        $methodOption = $this->option('method');
+        $pathOption = $this->option('path');
+        $nameOption = $this->option('name');
+        $controllerOption = $this->option('controller');
 
-        if ($method) {
-            $method = strtoupper($method);
+        if (is_string($methodOption) && $methodOption !== '') {
+            $methodUpper = strtoupper($methodOption);
             $routes = $routes->filter(
-                fn (array $route) => Str::contains($route['method'], $method)
+                fn (array $route) => is_string($route['method']) && Str::contains($route['method'], $methodUpper)
             );
         }
 
-        if ($path) {
+        if (is_string($pathOption) && $pathOption !== '') {
             $routes = $routes->filter(
-                fn (array $route) => Str::contains($route['uri'], $path)
+                fn (array $route) => is_string($route['uri']) && Str::contains($route['uri'], $pathOption)
             );
         }
 
-        if ($name) {
+        if (is_string($nameOption) && $nameOption !== '') {
             $routes = $routes->filter(
-                fn (array $route) => $route['name'] !== '—' && Str::contains($route['name'], $name)
+                fn (array $route) => is_string($route['name']) && $route['name'] !== '—' && Str::contains($route['name'], $nameOption)
             );
         }
 
-        if ($controller) {
-            $routes = $routes->filter(function (array $route) use ($controller) {
-                $full = $route['action_full'];
+        if (is_string($controllerOption) && $controllerOption !== '') {
+            $routes = $routes->filter(function (array $route) use ($controllerOption) {
+                $full = is_string($route['action_full']) ? $route['action_full'] : '';
 
                 // Match against full class name or just the basename
                 $basename = class_basename(Str::before($full, '@'));
 
-                return Str::contains($full, $controller) || Str::contains($basename, $controller);
+                return Str::contains($full, $controllerOption) || Str::contains($basename, $controllerOption);
             });
         }
 
+        /** @phpstan-ignore return.type */
         return $routes->values();
     }
 
     /**
      * Render routes as a formatted table.
      *
-     * @param  Collection<int, array<string, mixed>>  $routes
+     * @param Collection<int, array<string, mixed>> $routes
      */
     protected function outputTable(Collection $routes): void
     {
         $this->components->twoColumnDetail(
             '<fg=green;options=bold>Gale Routes</>',
-            '<fg=gray>'.$routes->count().' route'.($routes->count() === 1 ? '' : 's').'</>'
+            '<fg=gray>' . $routes->count() . ' route' . ($routes->count() === 1 ? '' : 's') . '</>'
         );
 
         $this->newLine();
@@ -199,11 +207,11 @@ class GaleRoutesCommand extends Command
         $this->table(
             ['Method', 'URI', 'Name', 'Middleware', 'Action'],
             $routes->map(fn (array $route) => [
-                $this->colorizeMethod($route['method']),
-                $route['uri'],
-                $route['name'],
-                $route['middleware'],
-                $route['action'],
+                $this->colorizeMethod(is_string($route['method']) ? $route['method'] : ''),
+                is_string($route['uri']) ? $route['uri'] : '',
+                is_string($route['name']) ? $route['name'] : '',
+                is_string($route['middleware']) ? $route['middleware'] : '',
+                is_string($route['action']) ? $route['action'] : '',
             ])->all()
         );
     }
@@ -211,19 +219,20 @@ class GaleRoutesCommand extends Command
     /**
      * Render routes as JSON to stdout.
      *
-     * @param  Collection<int, array<string, mixed>>  $routes
+     * @param Collection<int, array<string, mixed>> $routes
      */
     protected function outputJson(Collection $routes): void
     {
         $output = $routes->map(fn (array $route) => [
-            'method' => $route['method'],
-            'uri' => $route['uri'],
-            'name' => $route['name'] !== '—' ? $route['name'] : null,
-            'middleware' => $route['middleware'] !== '—' ? explode(', ', $route['middleware']) : [],
-            'action' => $route['action_full'],
+            'method' => is_string($route['method']) ? $route['method'] : '',
+            'uri' => is_string($route['uri']) ? $route['uri'] : '',
+            'name' => (is_string($route['name']) && $route['name'] !== '—') ? $route['name'] : null,
+            'middleware' => (is_string($route['middleware']) && $route['middleware'] !== '—') ? explode(', ', $route['middleware']) : [],
+            'action' => is_string($route['action_full']) ? $route['action_full'] : '',
         ])->values()->all();
 
-        $this->line(json_encode($output, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+        $encoded = json_encode($output, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        $this->line($encoded !== false ? $encoded : '[]');
     }
 
     /**

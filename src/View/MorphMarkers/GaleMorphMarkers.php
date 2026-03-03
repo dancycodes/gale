@@ -92,8 +92,6 @@ class GaleMorphMarkers
      * The precompiler injects PHP echo calls that print the HTML comment
      * markers at runtime (not at compile time) so the markers contain
      * the actual hash derived from template path + block position.
-     *
-     * @param  string|null  $viewPath  Template path used for deterministic hashing (set at render time)
      */
     public static function register(): void
     {
@@ -107,6 +105,7 @@ class GaleMorphMarkers
      *
      * NOTE: Laravel 12's Blade compiler already injects Alpine.morph-native block markers
      * (<!--[if BLOCK]><![endif]--> and <!--[if ENDBLOCK]><![endif]-->) for @if, @foreach,
+     *
      * @switch, @forelse, @unless, @isset, @auth, @guest, @while, and @for directives
      * via SupportMorphAwareBladeCompilation (Livewire integration in Laravel core).
      *
@@ -117,7 +116,8 @@ class GaleMorphMarkers
      * The BLOCK_START / BLOCK_END constants remain useful for PHP controllers that build
      * HTML strings manually (e.g. outerMorph() responses) where Blade is not involved.
      *
-     * @param  string  $template  Raw Blade template source
+     * @param string $template Raw Blade template source
+     *
      * @return string Unchanged template (Blade handles markers natively in Laravel 12)
      */
     public static function compile(string $template): string
@@ -181,10 +181,10 @@ class GaleMorphMarkers
             //   (b) is a closing directive (no parens) that appears at the start of a line
             //       (optionally preceded by whitespace)
             // This prevents false matches of @if / @foreach in heading text, button labels, etc.
-            $hasExpression = ! empty($match[3]);
+            $hasExpression = !empty($match[3]);
             $isAtLineStart = static::isAtLineStart($template, $matchPosition);
 
-            if (! $hasExpression && ! $isAtLineStart) {
+            if (!$hasExpression && !$isAtLineStart) {
                 continue;
             }
 
@@ -192,7 +192,7 @@ class GaleMorphMarkers
             while (
                 isset($match[4])
                 && str_ends_with($match[0], ')')
-                && ! static::hasEvenNumberOfParentheses($match[0])
+                && !static::hasEvenNumberOfParentheses($match[0])
             ) {
                 $afterPosition = $matchPosition + strlen($match[0]);
 
@@ -209,15 +209,15 @@ class GaleMorphMarkers
 
                 if (
                     isset($matches[0][$i - 1])
-                    && str_contains($rest.')', $matches[0][$i - 1][0])
+                    && str_contains($rest . ')', $matches[0][$i - 1][0])
                 ) {
                     unset($matches[0][$i - 1]);
                     $i--;
                 }
 
-                $match[0] = $match[0].$rest.')';
-                $match[3] = ($match[3] ?? '').$rest.')';
-                $match[4] = ($match[4] ?? '').$rest;
+                $match[0] = $match[0] . $rest . ')';
+                $match[3] = $match[3] . $rest . ')';
+                $match[4] = $match[4] . $rest;
             }
 
             // Inject markers based on directive type
@@ -243,10 +243,11 @@ class GaleMorphMarkers
      * and pairs it with the corresponding ENDBLOCK comment to define a
      * block boundary for stable morphing.
      *
-     * @param  string  $found  The matched directive text
-     * @param  string  $template  Full template source
-     * @param  int  $position  Byte offset in template
-     * @param  int  $blockCounter  Counter for this block (unused in current format, kept for future extension)
+     * @param string $found The matched directive text
+     * @param string $template Full template source
+     * @param int $position Byte offset in template
+     * @param int $blockCounter Counter for this block (unused in current format, kept for future extension)
+     *
      * @return string Modified template
      */
     protected static function prefixOpeningDirective(
@@ -275,9 +276,10 @@ class GaleMorphMarkers
      * end marker. Alpine.morph matches BLOCK/ENDBLOCK pairs to define block
      * boundaries, treating everything in between as a diffable unit.
      *
-     * @param  string  $found  The matched directive text
-     * @param  string  $template  Full template source
-     * @param  int  $position  Byte offset in template
+     * @param string $found The matched directive text
+     * @param string $template Full template source
+     * @param int $position Byte offset in template
+     *
      * @return string Modified template
      */
     protected static function suffixClosingDirective(
@@ -304,9 +306,10 @@ class GaleMorphMarkers
      *
      * @empty without parentheses closes the foreach iteration block.
      *
-     * @param  string  $found  The matched directive text
-     * @param  string  $template  Full template source
-     * @param  int  $position  Byte offset in template
+     * @param string $found The matched directive text
+     * @param string $template Full template source
+     * @param int $position Byte offset in template
+     *
      * @return string Modified template
      */
     protected static function suffixLoopEmptyDirective(
@@ -334,7 +337,7 @@ class GaleMorphMarkers
      * Longer directives sort before shorter to prevent premature matches
      * (e.g. @endforeach before @end).
      *
-     * @param  array<int, string>  $directives
+     * @param array<int, string> $directives
      */
     protected static function buildDirectivesPattern(array $directives): string
     {
@@ -342,17 +345,17 @@ class GaleMorphMarkers
 
         $parts = array_map(function (string $d): string {
             $escaped = preg_quote($d, '/');
-            $pattern = $escaped.'(?![a-zA-Z])';
+            $pattern = $escaped . '(?![a-zA-Z])';
 
             // @empty as a conditional must have opening paren; in @forelse it doesn't
             if (str_starts_with($d, '@empty')) {
-                $pattern = $escaped.'(?![a-zA-Z])[^\S\r\n]*\(';
+                $pattern = $escaped . '(?![a-zA-Z])[^\S\r\n]*\(';
             }
 
             return $pattern;
         }, $directives);
 
-        return '/('.implode('|', $parts).')/mUxi';
+        return '/(' . implode('|', $parts) . ')/mUxi';
     }
 
     /**
@@ -361,12 +364,13 @@ class GaleMorphMarkers
      * Uses position-based replacement so the first occurrence at or after
      * $position is replaced rather than searching for the pattern globally.
      *
-     * @param  string  $template  Full template source
-     * @param  int  $position  Known byte offset of the match
-     * @param  string  $pattern  Regex to confirm the match at $position
-     * @param  string  $found  Original matched text
-     * @param  string  $prefix  Text to prepend before $found
-     * @param  string  $suffix  Text to append after $found
+     * @param string $template Full template source
+     * @param int $position Known byte offset of the match
+     * @param string $pattern Regex to confirm the match at $position
+     * @param string $found Original matched text
+     * @param string $prefix Text to prepend before $found
+     * @param string $suffix Text to append after $found
+     *
      * @return string Modified template
      */
     protected static function replaceAtPosition(
@@ -383,14 +387,14 @@ class GaleMorphMarkers
         $before = substr($template, 0, $position);
         $after = substr($template, $position);
 
-        if (! preg_match($pattern, $after, $afterMatch, PREG_OFFSET_CAPTURE) || $afterMatch[0][1] !== 0) {
+        if (!preg_match($pattern, $after, $afterMatch, PREG_OFFSET_CAPTURE) || $afterMatch[0][1] !== 0) {
             return $template;
         }
 
         $matched = $afterMatch[0][0];
         $rest = substr($after, strlen($matched));
 
-        return $before.$prefix.$matched.$suffix.$rest;
+        return $before . $prefix . $matched . $suffix . $rest;
     }
 
     /**
@@ -398,8 +402,8 @@ class GaleMorphMarkers
      *
      * This prevents injecting markers as HTML attributes (e.g. inside <div @if(...)>).
      *
-     * @param  string  $template  Template source
-     * @param  int  $position  Byte position to check
+     * @param string $template Template source
+     * @param int $position Byte position to check
      */
     protected static function isInsideHtmlTag(string $template, int $position): bool
     {
@@ -423,13 +427,13 @@ class GaleMorphMarkers
             }
 
             // Skip non-tag '<' (comparison operators, etc.)
-            if (! preg_match('/^<(\/?[a-zA-Z]|![a-zA-Z]|\/?(\{\{|\{!!))/', $segment)) {
+            if (!preg_match('/^<(\/?[a-zA-Z]|![a-zA-Z]|\/?(\{\{|\{!!))/', $segment)) {
                 $searchFrom = $bracketPos;
 
                 continue;
             }
 
-            return ! static::hasClosingBracketInSegment($segment);
+            return !static::hasClosingBracketInSegment($segment);
         }
 
         return false;
@@ -440,7 +444,7 @@ class GaleMorphMarkers
      *
      * Ignores '>' inside quoted attribute values, parentheses, and braces.
      *
-     * @param  string  $segment  Substring starting at '<'
+     * @param string $segment Substring starting at '<'
      */
     protected static function hasClosingBracketInSegment(string $segment): bool
     {
@@ -454,17 +458,17 @@ class GaleMorphMarkers
             $char = $segment[$i];
             $prev = $segment[$i - 1];
 
-            if (! $inDouble && $char === "'" && $prev !== '\\') {
-                $inSingle = ! $inSingle;
-            } elseif (! $inSingle && $char === '"' && $prev !== '\\') {
-                $inDouble = ! $inDouble;
-            } elseif (! $inSingle && ! $inDouble) {
+            if (!$inDouble && $char === "'" && $prev !== '\\') {
+                $inSingle = !$inSingle;
+            } elseif (!$inSingle && $char === '"' && $prev !== '\\') {
+                $inDouble = !$inDouble;
+            } elseif (!$inSingle && !$inDouble) {
                 match ($char) {
                     '(' => $parenDepth++,
                     ')' => $parenDepth = max(0, $parenDepth - 1),
                     '{' => $braceDepth++,
                     '}' => $braceDepth = max(0, $braceDepth - 1),
-                    '>' => (function () use (&$result): void {
+                    '>' => (static function (): void {
                         // handled below
                     })(),
                     default => null,
@@ -484,11 +488,11 @@ class GaleMorphMarkers
      *
      * Used to detect unbalanced @if($foo > bar('x')) patterns.
      *
-     * @param  string  $expression  Directive text including the @directive(...)
+     * @param string $expression Directive text including the @directive(...)
      */
     protected static function hasEvenNumberOfParentheses(string $expression): bool
     {
-        $tokens = token_get_all('<?php '.$expression);
+        $tokens = token_get_all('<?php ' . $expression);
 
         if (Arr::last($tokens) !== ')') {
             return false;
@@ -513,8 +517,9 @@ class GaleMorphMarkers
      *
      * Directives inside these ranges are not processed.
      *
-     * @param  string  $template  Template source
-     * @param  array<string>  $tags  Tag names to find
+     * @param string $template Template source
+     * @param array<string> $tags Tag names to find
+     *
      * @return array<int, array{0: int, 1: int}> Array of [start, end] pairs
      */
     protected static function findIgnoredTagRanges(string $template, array $tags): array
@@ -527,7 +532,7 @@ class GaleMorphMarkers
         $tagsPattern = implode('|', $escapedTags);
 
         preg_match_all(
-            '/<('.$tagsPattern.')(?:\s[^>]*)?>|<\/('.$tagsPattern.')>/i',
+            '/<(' . $tagsPattern . ')(?:\s[^>]*)?>|<\/(' . $tagsPattern . ')>/i',
             $template,
             $tagMatches,
             PREG_OFFSET_CAPTURE
@@ -540,9 +545,9 @@ class GaleMorphMarkers
             $tag = $tagMatch[0];
             $position = $tagMatch[1];
 
-            if (preg_match('/<('.$tagsPattern.')/i', $tag, $typeMatch)) {
+            if (preg_match('/<(' . $tagsPattern . ')/i', $tag, $typeMatch)) {
                 $stack[] = ['type' => strtolower($typeMatch[1]), 'start' => $position];
-            } elseif (preg_match('/<\/('.$tagsPattern.')>/i', $tag, $typeMatch)) {
+            } elseif (preg_match('/<\/(' . $tagsPattern . ')>/i', $tag, $typeMatch)) {
                 $type = strtolower($typeMatch[1]);
 
                 for ($i = count($stack) - 1; $i >= 0; $i--) {
@@ -561,8 +566,8 @@ class GaleMorphMarkers
     /**
      * Check if a position falls within any of the given excluded ranges.
      *
-     * @param  int  $position  Byte position to check
-     * @param  array<int, array{0: int, 1: int}>  $ranges  Excluded ranges
+     * @param int $position Byte position to check
+     * @param array<int, array{0: int, 1: int}> $ranges Excluded ranges
      */
     protected static function isInExcludedRange(int $position, array $ranges): bool
     {
@@ -583,8 +588,8 @@ class GaleMorphMarkers
      * from @directive text that appears in HTML content (headings, paragraphs,
      * button labels, etc.).
      *
-     * @param  string  $template  Template source
-     * @param  int  $position  Byte offset of the directive
+     * @param string $template Template source
+     * @param int $position Byte offset of the directive
      */
     protected static function isAtLineStart(string $template, int $position): bool
     {
@@ -610,7 +615,8 @@ class GaleMorphMarkers
      *
      * Directives mentioned inside Blade comments must not be processed.
      *
-     * @param  string  $template  Template source
+     * @param string $template Template source
+     *
      * @return array<int, array{0: int, 1: int}> Array of [start, end] pairs
      */
     protected static function findBladeCommentRanges(string $template): array

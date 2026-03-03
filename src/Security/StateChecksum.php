@@ -36,10 +36,11 @@ class StateChecksum
      *
      * The HMAC secret is derived from config('app.key') (BR-013.2).
      *
-     * @param  array<string, mixed>  $state  The state to sign (must NOT include _checksum)
-     * @return string Hex-encoded HMAC-SHA256 digest
+     * @param array<string, mixed> $state The state to sign (must NOT include _checksum)
      *
      * @throws RuntimeException When app.key is empty or not configured
+     *
+     * @return string Hex-encoded HMAC-SHA256 digest
      */
     public static function compute(array $state): string
     {
@@ -55,8 +56,9 @@ class StateChecksum
      * Recomputes the HMAC over the state (with _checksum removed) and compares
      * the result to the submitted checksum using timing-safe hash_equals() (BR-013.8).
      *
-     * @param  array<string, mixed>  $state  Incoming state (may include _checksum)
-     * @param  string  $checksum  The submitted checksum to verify
+     * @param array<string, mixed> $state Incoming state (may include _checksum)
+     * @param string $checksum The submitted checksum to verify
+     *
      * @return bool True when the checksum is valid; false otherwise
      */
     public static function verify(array $state, string $checksum): bool
@@ -77,7 +79,8 @@ class StateChecksum
      * a new array containing all original keys plus `_checksum` appended at
      * the end (BR-013.1, BR-013.4).
      *
-     * @param  array<string, mixed>  $state  State to sign
+     * @param array<string, mixed> $state State to sign
+     *
      * @return array<string, mixed> State with `_checksum` appended
      */
     public static function sign(array $state): array
@@ -94,7 +97,7 @@ class StateChecksum
      * deterministic regardless of insertion order. Produces compact JSON
      * (no whitespace) for efficiency (BR-013.3).
      *
-     * @param  array<string, mixed>  $state
+     * @param array<string, mixed> $state
      */
     protected static function canonicalize(array $state): string
     {
@@ -114,7 +117,7 @@ class StateChecksum
      */
     protected static function sortKeysRecursively(mixed $value): mixed
     {
-        if (! is_array($value)) {
+        if (!is_array($value)) {
             return $value;
         }
 
@@ -137,22 +140,22 @@ class StateChecksum
      * We strip the prefix and base64-decode to get the raw 32-byte key.
      * A plain key (no prefix) is used as-is (BR-013.2).
      *
-     * @return string Raw binary HMAC secret
      *
      * @throws RuntimeException When the application key is empty or not configured
+     *
+     * @return string Raw binary HMAC secret
      */
     protected static function deriveSecret(): string
     {
         $appKey = config('app.key', '');
 
-        if (! is_string($appKey) || $appKey === '') {
+        if (!is_string($appKey) || $appKey === '') {
             throw new RuntimeException(
                 'Gale checksum: app.key is not configured. Set APP_KEY in your .env file.'
             );
         }
 
         if (str_starts_with($appKey, 'base64:')) {
-            /** @var string $decoded */
             $decoded = base64_decode(substr($appKey, 7), strict: true);
 
             return $decoded !== false ? $decoded : $appKey;

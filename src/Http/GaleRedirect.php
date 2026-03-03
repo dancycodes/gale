@@ -43,8 +43,8 @@ class GaleRedirect implements Responsable
      * URL can be provided here or set later using to(), route(), back(), home(), intended(), etc.
      * This matches Laravel's redirect() helper which works without requiring an immediate URL.
      *
-     * @param  string|null  $url  Optional destination URL for redirect
-     * @param  \Dancycodes\Gale\Http\GaleResponse  $galeResponse  Parent response builder instance
+     * @param string|null $url Optional destination URL for redirect
+     * @param \Dancycodes\Gale\Http\GaleResponse $galeResponse Parent response builder instance
      */
     public function __construct(?string $url, GaleResponse $galeResponse)
     {
@@ -57,7 +57,8 @@ class GaleRedirect implements Responsable
      *
      * Provides explicit URL setting matching Laravel's redirect()->to() pattern.
      *
-     * @param  string  $url  Destination URL for redirect
+     * @param string $url Destination URL for redirect
+     *
      * @return static Returns this instance for method chaining
      */
     public function to(string $url): self
@@ -73,7 +74,8 @@ class GaleRedirect implements Responsable
      * Use this for redirects to external domains. Unlike to(), this method
      * explicitly signals that the URL is external and bypasses domain checks.
      *
-     * @param  string  $url  External URL to redirect to
+     * @param string $url External URL to redirect to
+     *
      * @return static Returns this instance for method chaining
      */
     public function away(string $url): self
@@ -90,8 +92,9 @@ class GaleRedirect implements Responsable
      * in session only for the immediately following request, then is automatically removed.
      * Multiple calls accumulate flash data rather than replacing it.
      *
-     * @param  string|array<string, mixed>  $key  Flash data key or associative array
-     * @param  mixed  $value  Flash data value when $key is string, ignored when $key is array
+     * @param string|array<string, mixed> $key Flash data key or associative array
+     * @param mixed $value Flash data value when $key is string, ignored when $key is array
+     *
      * @return static Returns this instance for method chaining
      */
     public function with(string|array $key, mixed $value = null): self
@@ -111,7 +114,8 @@ class GaleRedirect implements Responsable
      * Stores form input data in session under '_old_input' key, typically used to repopulate
      * forms after validation failures. Uses current request input if no specific input provided.
      *
-     * @param  array<string, mixed>|null  $input  Input data to flash, or null for current request input
+     * @param array<string, mixed>|null $input Input data to flash, or null for current request input
+     *
      * @return static Returns this instance for method chaining
      */
     public function withInput(?array $input = null): self
@@ -127,7 +131,8 @@ class GaleRedirect implements Responsable
      * Stores error data in session under 'errors' key for display in destination page.
      * Accepts various error formats including MessageBag, Validator, or array.
      *
-     * @param  mixed  $errors  Error data in various supported formats
+     * @param mixed $errors Error data in various supported formats
+     *
      * @return static Returns this instance for method chaining
      */
     public function withErrors(mixed $errors): self
@@ -144,7 +149,8 @@ class GaleRedirect implements Responsable
      *
      * For non-Gale requests, falls back to standard Laravel redirect response.
      *
-     * @param  \Illuminate\Http\Request|null  $request  Laravel request instance or null for auto-detection
+     * @param \Illuminate\Http\Request|null $request Laravel request instance or null for auto-detection
+     *
      * @return \Symfony\Component\HttpFoundation\Response SSE response for Gale, RedirectResponse for non-Gale
      */
     public function toResponse($request = null): \Symfony\Component\HttpFoundation\Response
@@ -154,7 +160,7 @@ class GaleRedirect implements Responsable
         // Validate URL is set - throw helpful exception if not
         if ($this->url === null) {
             throw new \LogicException(
-                'Redirect URL not set. Use redirect("/path"), redirect()->to("/path"), '.
+                'Redirect URL not set. Use redirect("/path"), redirect()->to("/path"), ' .
                 'redirect()->back(), redirect()->route("name"), redirect()->home(), or redirect()->intended().'
             );
         }
@@ -166,21 +172,19 @@ class GaleRedirect implements Responsable
 
         // For non-Gale requests, use standard Laravel redirect
         /** @phpstan-ignore method.notFound (isGale is a Request macro) */
-        if (! $request->isGale()) {
-            $redirect = redirect($this->url);
-
+        if (!$request->isGale()) {
             // Apply flash data
-            if (! empty($this->flashData)) {
+            if (!empty($this->flashData)) {
                 foreach ($this->flashData as $key => $value) {
                     session()->flash((string) $key, $value);
                 }
             }
 
-            return $redirect;
+            return redirect()->to($this->url ?? '/');
         }
 
         // Flash data to session for the next request
-        if (! empty($this->flashData)) {
+        if (!empty($this->flashData)) {
             foreach ($this->flashData as $key => $value) {
                 session()->flash((string) $key, $value);
             }
@@ -212,7 +216,7 @@ class GaleRedirect implements Responsable
      * - BR-020.2: Same-origin absolute URLs always allowed
      * - BR-020.4/BR-020.3: External URLs checked against gale.redirect.allowed_domains
      *
-     * @param  string  $url  URL to validate
+     * @param string $url URL to validate
      *
      * @throws \InvalidArgumentException When the URL is blocked by the security policy
      */
@@ -231,19 +235,19 @@ class GaleRedirect implements Responsable
         }
 
         // BR-020.1: Fragment-only (#anchor) and relative paths starting with / are always safe
-        if ($url === '' || str_starts_with($url, '#') || (str_starts_with($url, '/') && ! str_starts_with($url, '//'))) {
+        if ($url === '' || str_starts_with($url, '#') || (str_starts_with($url, '/') && !str_starts_with($url, '//'))) {
             return;
         }
 
         // Relative path without scheme (no ://)
-        if (! str_contains($url, '://') && ! str_starts_with($url, '//')) {
+        if (!str_contains($url, '://') && !str_starts_with($url, '//')) {
             return;
         }
 
         // Parse absolute or protocol-relative URL
         $parsedUrl = parse_url($url);
 
-        if ($parsedUrl === false || ! isset($parsedUrl['host'])) {
+        if ($parsedUrl === false || !isset($parsedUrl['host'])) {
             return; // Malformed or relative — let it through (frontend will catch issues)
         }
 
@@ -268,9 +272,10 @@ class GaleRedirect implements Responsable
         // (e.g. Pest browser tests), the URL generator produces URLs with the app.url host
         // while the request Host header reflects a different hostname. Both are legitimate
         // application origins and should be treated as same-origin for redirect safety.
-        $appUrl = config('app.url', '');
+        $appUrlRaw = config('app.url', '');
+        $appUrl = is_string($appUrlRaw) ? $appUrlRaw : '';
         if ($appUrl) {
-            $appParsed = parse_url((string) $appUrl);
+            $appParsed = parse_url($appUrl);
             if (isset($appParsed['host'])) {
                 $appHost = strtolower($appParsed['host']);
                 $appPort = $appParsed['port'] ?? null;
@@ -304,7 +309,7 @@ class GaleRedirect implements Responsable
             $allowedDomains = $legacyDomains;
         }
 
-        if (! empty($allowedDomains)) {
+        if (!empty($allowedDomains)) {
             foreach ($allowedDomains as $pattern) {
                 $pattern = strtolower(trim((string) $pattern));
 
@@ -315,7 +320,7 @@ class GaleRedirect implements Responsable
                 if (str_starts_with($pattern, '*.')) {
                     $base = substr($pattern, 2);
 
-                    if ($urlHost === $base || str_ends_with($urlHost, '.'.$base)) {
+                    if ($urlHost === $base || str_ends_with($urlHost, '.' . $base)) {
                         return; // Whitelist match — allowed
                     }
                 } elseif ($urlHost === $pattern) {
@@ -325,7 +330,7 @@ class GaleRedirect implements Responsable
         }
 
         throw new \InvalidArgumentException(
-            "Redirect blocked: external domain '{$urlHost}' is not in the allowed domains list. ".
+            "Redirect blocked: external domain '{$urlHost}' is not in the allowed domains list. " .
             "Add it to config('gale.redirect.allowed_domains') or set config('gale.redirect.allow_external') to true."
         );
     }
@@ -336,7 +341,8 @@ class GaleRedirect implements Responsable
      * Decodes percent-encoding and strips C0/C1 control characters (including \r, \n, \t)
      * to prevent bypasses like java%73cript: or java\nscript:.
      *
-     * @param  string  $url  Raw URL
+     * @param string $url Raw URL
+     *
      * @return string Normalized URL for protocol extraction only
      */
     protected function normalizeUrlForProtocolCheck(string $url): string
@@ -364,13 +370,14 @@ class GaleRedirect implements Responsable
      * Returns only letter-based scheme names to match RFC 3986 and avoid
      * matching numeric or mixed-character strings as protocols.
      *
-     * @param  string  $normalizedUrl  Normalized URL string
+     * @param string $normalizedUrl Normalized URL string
+     *
      * @return string Lowercase protocol ending with ':' (e.g. 'javascript:'), or '' if none
      */
     protected function extractProtocol(string $normalizedUrl): string
     {
         if (preg_match('/^([a-zA-Z][a-zA-Z0-9+\-.]*)\s*:/', $normalizedUrl, $matches)) {
-            return strtolower($matches[1]).':';
+            return strtolower($matches[1]) . ':';
         }
 
         return '';
@@ -388,7 +395,8 @@ class GaleRedirect implements Responsable
      * `gale.redirect_allowed_domains` config key can whitelist additional domains or patterns
      * (supports `*.example.com` wildcards).
      *
-     * @param  string  $fallback  Fallback URL when no valid previous URL available
+     * @param string $fallback Fallback URL when no valid previous URL available
+     *
      * @return static Returns this instance for method chaining
      */
     public function back(string $fallback = '/'): self
@@ -396,7 +404,7 @@ class GaleRedirect implements Responsable
         $previousUrl = url()->previous();
 
         if (
-            ! $previousUrl ||
+            !$previousUrl ||
             $previousUrl === request()->url() ||
             $previousUrl === request()->fullUrl()
         ) {
@@ -428,8 +436,9 @@ class GaleRedirect implements Responsable
      *
      * IPv4/IPv6 addresses bypass the registrable-domain logic and use exact matching only.
      *
-     * @param  string  $host1  First hostname (may include port)
-     * @param  string  $host2  Second hostname (may include port)
+     * @param string $host1 First hostname (may include port)
+     * @param string $host2 Second hostname (may include port)
+     *
      * @return bool True when the two hosts are considered the same domain
      */
     protected function isSameDomain(string $host1, string $host2): bool
@@ -446,7 +455,7 @@ class GaleRedirect implements Responsable
         /** @var array<int, string> $allowedDomains */
         $allowedDomains = config('gale.redirect_allowed_domains', []);
 
-        if (! empty($allowedDomains)) {
+        if (!empty($allowedDomains)) {
             foreach ($allowedDomains as $pattern) {
                 $pattern = strtolower((string) $pattern);
 
@@ -454,7 +463,7 @@ class GaleRedirect implements Responsable
                     // Wildcard: *.example.com matches sub.example.com and example.com
                     $base = substr($pattern, 2);
 
-                    if ($host1 === $base || str_ends_with($host1, '.'.$base)) {
+                    if ($host1 === $base || str_ends_with($host1, '.' . $base)) {
                         return true;
                     }
                 } elseif ($host1 === $pattern) {
@@ -477,7 +486,8 @@ class GaleRedirect implements Responsable
      * `parse_url($url, PHP_URL_HOST)` normally excludes ports, but when a host string
      * is extracted and re-used it may still contain a colon-port suffix.
      *
-     * @param  string  $host  Host string, optionally suffixed with `:port`
+     * @param string $host Host string, optionally suffixed with `:port`
+     *
      * @return string Host without port
      */
     protected function stripPort(string $host): string
@@ -501,7 +511,8 @@ class GaleRedirect implements Responsable
     /**
      * Determine whether a host string is an IP address (IPv4 or IPv6)
      *
-     * @param  string  $host  Normalised host string (no port, lowercased)
+     * @param string $host Normalised host string (no port, lowercased)
+     *
      * @return bool True when the string is a valid IP address
      */
     protected function isIpAddress(string $host): bool
@@ -523,7 +534,8 @@ class GaleRedirect implements Responsable
      * unrelated registrants. A full PSL implementation can be substituted by
      * replacing this method.
      *
-     * @param  string  $host  Normalised hostname (lowercase, no port)
+     * @param string $host Normalised hostname (lowercase, no port)
+     *
      * @return string Registrable domain (last two labels, e.g. `example.com`)
      */
     protected function getRegistrableDomain(string $host): string
@@ -544,8 +556,9 @@ class GaleRedirect implements Responsable
      * Query preservation uses fullUrl(), while non-preservation uses base url() without parameters.
      * Fragment preservation attempts to extract from HTTP_REFERER when available.
      *
-     * @param  bool  $preserveQuery  Whether to maintain current query string parameters
-     * @param  bool  $preserveFragment  Whether to maintain URL fragment identifier
+     * @param bool $preserveQuery Whether to maintain current query string parameters
+     * @param bool $preserveFragment Whether to maintain URL fragment identifier
+     *
      * @return static Returns this instance for method chaining
      */
     public function refresh(bool $preserveQuery = true, bool $preserveFragment = false): self
@@ -556,7 +569,7 @@ class GaleRedirect implements Responsable
             if ($preserveFragment && isset($_SERVER['HTTP_REFERER']) && is_string($_SERVER['HTTP_REFERER'])) {
                 $fragment = parse_url($_SERVER['HTTP_REFERER'], PHP_URL_FRAGMENT);
                 if ($fragment) {
-                    $url .= '#'.$fragment;
+                    $url .= '#' . $fragment;
                 }
             }
 
@@ -590,12 +603,13 @@ class GaleRedirect implements Responsable
      * with option for relative or absolute URL generation. Throws exception if
      * specified route does not exist in application route definitions.
      *
-     * @param  string  $routeName  Laravel route name
-     * @param  array<string, mixed>  $parameters  Route parameter values
-     * @param  bool  $absolute  Whether to generate absolute URL with domain
-     * @return static Returns this instance for method chaining
+     * @param string $routeName Laravel route name
+     * @param array<string, mixed> $parameters Route parameter values
+     * @param bool $absolute Whether to generate absolute URL with domain
      *
      * @throws \InvalidArgumentException When route name does not exist
+     *
+     * @return static Returns this instance for method chaining
      */
     public function route(string $routeName, array $parameters = [], bool $absolute = true): self
     {
@@ -615,7 +629,8 @@ class GaleRedirect implements Responsable
      * middleware), with same-domain validation for security. Falls back to provided default
      * URL if no intended URL exists or if intended URL is from external domain.
      *
-     * @param  string  $default  Fallback URL when no valid intended URL available
+     * @param string $default Fallback URL when no valid intended URL available
+     *
      * @return static Returns this instance for method chaining
      */
     public function intended(string $default = '/'): self
@@ -626,7 +641,7 @@ class GaleRedirect implements Responsable
             $intendedHost = parse_url($intendedUrl, PHP_URL_HOST);
             $currentHost = parse_url((string) request()->url(), PHP_URL_HOST);
 
-            if ($intendedHost === false || $currentHost === false || ! $this->isSameDomain((string) $intendedHost, (string) $currentHost)) {
+            if ($intendedHost === false || $currentHost === false || !$this->isSameDomain((string) $intendedHost, (string) $currentHost)) {
                 $intendedUrl = $default;
             }
         }
@@ -646,16 +661,17 @@ class GaleRedirect implements Responsable
      *
      * For non-Gale requests, redirects back to current URL to trigger a refresh.
      *
-     * @param  bool  $forceReload  Whether to bypass browser cache and force server fetch
+     * @param bool $forceReload Whether to bypass browser cache and force server fetch
+     *
      * @return \Symfony\Component\HttpFoundation\Response SSE response for Gale, RedirectResponse for non-Gale
      */
     public function forceReload(bool $forceReload = false): \Symfony\Component\HttpFoundation\Response
     {
         // For non-Gale requests, redirect to current URL
         /** @phpstan-ignore method.notFound (isGale is a Request macro) */
-        if (! request()->isGale()) {
+        if (!request()->isGale()) {
             // Flash data to session
-            if (! empty($this->flashData)) {
+            if (!empty($this->flashData)) {
                 foreach ($this->flashData as $key => $value) {
                     session()->flash((string) $key, $value);
                 }
@@ -665,7 +681,7 @@ class GaleRedirect implements Responsable
         }
 
         // Flash data to session for the next request
-        if (! empty($this->flashData)) {
+        if (!empty($this->flashData)) {
             foreach ($this->flashData as $key => $value) {
                 session()->flash((string) $key, $value);
             }
@@ -691,17 +707,18 @@ class GaleRedirect implements Responsable
      * previous URL exists or if previous URL matches current URL. Combines back() and route()
      * functionality in single method for conditional navigation logic.
      *
-     * @param  string  $routeName  Fallback route name when previous URL unavailable
-     * @param  array<string, mixed>  $routeParameters  Parameters for fallback route
-     * @return static Returns this instance for method chaining
+     * @param string $routeName Fallback route name when previous URL unavailable
+     * @param array<string, mixed> $routeParameters Parameters for fallback route
      *
      * @throws \InvalidArgumentException When fallback route name does not exist
+     *
+     * @return static Returns this instance for method chaining
      */
     public function backOr(string $routeName, array $routeParameters = []): self
     {
         $previousUrl = url()->previous();
 
-        if (! $previousUrl || $previousUrl === request()->url()) {
+        if (!$previousUrl || $previousUrl === request()->url()) {
             return $this->route($routeName, $routeParameters);
         }
 

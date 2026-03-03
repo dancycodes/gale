@@ -1,0 +1,7 @@
+includes:
+    - phpstan.neon.dist
+
+parameters:
+    # Suppress false positives caused by PHPDoc return types (e.g. strlen comparison after
+    # a PHPDoc-narrowed type makes the comparison appear always-false at level 9)
+    treatPhpDocTypesAsCertain: false

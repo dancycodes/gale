@@ -30,7 +30,7 @@ class Route implements DiscoveryAttribute
     /** @var array<int, string> Normalized uppercase HTTP method names */
     public array $methods;
 
-    /** @var array<int, class-string> Middleware class names or aliases */
+    /** @var array<int, string> Middleware class names or aliases */
     public array $middleware;
 
     /**
@@ -40,7 +40,7 @@ class Route implements DiscoveryAttribute
      * @param string|null $uri Custom URI pattern for route, or null for auto-generated URI
      * @param string|null $fullUri Complete URI override bypassing all transformers
      * @param string|null $name Route name for Laravel route() helper
-     * @param array<int, class-string>|string $middleware Middleware to apply to route
+     * @param array<int, string>|string $middleware Middleware to apply to route
      * @param string|null $domain Domain constraint for multi-tenant routing
      * @param bool $withTrashed Whether to include soft-deleted models in route model binding
      */
@@ -62,6 +62,9 @@ class Route implements DiscoveryAttribute
             ->toArray();
 
         $this->methods = $processedMethods;
-        $this->middleware = Arr::wrap($middleware);
+
+        /** @var array<int, string> $wrappedMiddleware */
+        $wrappedMiddleware = Arr::wrap($middleware);
+        $this->middleware = $wrappedMiddleware;
     }
 }

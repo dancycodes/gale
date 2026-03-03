@@ -49,7 +49,7 @@ class PendingRouteAction
     /** @var array{class-string, string} Controller class and method name tuple */
     public array $action;
 
-    /** @var array<int, class-string> Middleware class names or aliases */
+    /** @var array<int, string> Middleware class names or aliases */
     public array $middleware = [];
 
     /** @var array<string, string> Parameter name to regex constraint mapping */
@@ -216,7 +216,7 @@ class PendingRouteAction
      * double-execution. Accepts middleware as class names, aliases, or arrays. Middleware
      * is applied in order during request processing.
      *
-     * @param array<class-string>|class-string $middleware Middleware to add
+     * @param array<int, string>|string $middleware Middleware to add
      *
      * @return static Returns this instance for method chaining
      */

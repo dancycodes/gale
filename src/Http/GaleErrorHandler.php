@@ -50,7 +50,7 @@ class GaleErrorHandler
 
         // Only convert for Gale requests (BR-014.9, BR-F058-07)
         /** @phpstan-ignore method.notFound (isGale is a Request macro) */
-        if (! $request->isGale()) {
+        if (!$request->isGale()) {
             return null;
         }
 
@@ -75,7 +75,8 @@ class GaleErrorHandler
             // In both cases the login URL is encoded in the response body/events, so the frontend
             //   navigates to login without needing a 401 HTTP status code.
             if ($status === 401) {
-                $loginUrl = config('gale.login_url', '/login');
+                $loginUrlRaw = config('gale.login_url', '/login');
+                $loginUrl = is_string($loginUrlRaw) ? $loginUrlRaw : '/login';
 
                 return gale()->redirect($loginUrl)->toResponse($request);
             }
@@ -88,12 +89,13 @@ class GaleErrorHandler
                     ->dispatch('gale:csrf-expired', $errorDetail)
                     ->dispatch('gale:error', $errorDetail);
 
+                /** @var Response $response */
                 $response = $gale->toResponse($request);
                 $response->setStatusCode($status);
 
                 // Preserve exception headers (BR-F060-08)
                 foreach ($exceptionHeaders as $name => $value) {
-                    $response->headers->set($name, $value);
+                    $response->headers->set((string) $name, $value);
                 }
 
                 return $response;
@@ -105,12 +107,13 @@ class GaleErrorHandler
                 ->state('_error', $errorDetail)
                 ->dispatch('gale:error', $errorDetail);
 
+            /** @var Response $response */
             $response = $gale->toResponse($request);
             $response->setStatusCode($status);
 
             // F-060 BR-F060-08: Preserve exception headers (e.g. Retry-After from throttle middleware)
             foreach ($exceptionHeaders as $name => $value) {
-                $response->headers->set($name, $value);
+                $response->headers->set((string) $name, $value);
             }
 
             return $response;
@@ -158,7 +161,7 @@ class GaleErrorHandler
                 $trace[] = [
                     'file' => $frame['file'] ?? '[internal]',
                     'line' => $frame['line'] ?? 0,
-                    'function' => ($frame['class'] ?? '').($frame['type'] ?? '').($frame['function'] ?? ''),
+                    'function' => ($frame['class'] ?? '') . ($frame['type'] ?? '') . $frame['function'],
                 ];
             }
             $detail['trace'] = $trace;
@@ -210,7 +213,7 @@ class GaleErrorHandler
         // HttpException messages (from abort()) are developer-defined and safe to expose
         if ($e instanceof HttpExceptionInterface) {
             $httpMessage = $e->getMessage();
-            if (! empty($httpMessage)) {
+            if (!empty($httpMessage)) {
                 return $httpMessage;
             }
         }
@@ -219,13 +222,13 @@ class GaleErrorHandler
         // e.g. "This action is unauthorized." from Gate/Policy evaluation
         if ($e instanceof \Illuminate\Auth\Access\AuthorizationException) {
             $authMessage = $e->getMessage();
-            if (! empty($authMessage)) {
+            if (!empty($authMessage)) {
                 return $authMessage;
             }
         }
 
         // In debug mode, expose the exception message for developers (BR-014.10, BR-F058-04)
-        if (config('app.debug') && ! empty($e->getMessage())) {
+        if (config('app.debug') && !empty($e->getMessage())) {
             return $e->getMessage();
         }
 

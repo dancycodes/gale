@@ -55,7 +55,7 @@ class GalePushChannel
     protected string $channelName;
 
     /**
-     * @param  string  $channelName  Channel name to push to
+     * @param string $channelName Channel name to push to
      */
     public function __construct(string $channelName)
     {
@@ -68,8 +68,8 @@ class GalePushChannel
      * Queues a gale-patch-state event for all clients subscribed to this channel.
      * The state is signed with HMAC-SHA256 before being queued (F-013).
      *
-     * @param  string|array<string, mixed>  $key  State key or associative array of state updates
-     * @param  mixed  $value  State value (when $key is a string)
+     * @param string|array<string, mixed> $key State key or associative array of state updates
+     * @param mixed $value State value (when $key is a string)
      */
     public function patchState(string|array $key, mixed $value = null): static
     {
@@ -90,9 +90,9 @@ class GalePushChannel
      *
      * Queues a gale-patch-elements event for all clients subscribed to this channel.
      *
-     * @param  string  $selector  CSS selector of target element
-     * @param  string  $html  HTML content to patch into target
-     * @param  array<string, mixed>  $options  Patch options (mode, useViewTransition, settle, scroll, show)
+     * @param string $selector CSS selector of target element
+     * @param string $html HTML content to patch into target
+     * @param array<string, mixed> $options Patch options (mode, useViewTransition, settle, scroll, show)
      */
     public function patchElements(string $selector, string $html, array $options = []): static
     {
@@ -111,14 +111,14 @@ class GalePushChannel
      *
      * Queues a gale-patch-component event for all clients subscribed to this channel.
      *
-     * @param  string  $componentName  Named component to target
-     * @param  array<string, mixed>  $state  State updates to merge
+     * @param string $componentName Named component to target
+     * @param array<string, mixed> $state State updates to merge
      */
     public function patchComponent(string $componentName, array $state): static
     {
         $dataLines = [
-            'component '.$componentName,
-            'state '.json_encode($state),
+            'component ' . $componentName,
+            'state ' . json_encode($state),
         ];
 
         $this->events[] = $this->formatEvent('gale-patch-component', $dataLines);
@@ -139,9 +139,10 @@ class GalePushChannel
             return;
         }
 
-        $cacheKey = self::CACHE_KEY_PREFIX.$this->channelName;
+        $cacheKey = self::CACHE_KEY_PREFIX . $this->channelName;
 
         // Atomic append to channel queue
+        /** @var array<int, string> $existing */
         $existing = Cache::get($cacheKey, []);
         $existing = array_merge($existing, $this->events);
         Cache::put($cacheKey, $existing, self::CACHE_TTL);
@@ -156,16 +157,18 @@ class GalePushChannel
      * Called by the channel endpoint to drain pending events.
      * Returns all events and clears the queue atomically.
      *
-     * @param  string  $channelName  Channel name to drain
+     * @param string $channelName Channel name to drain
+     *
      * @return array<int, string> Array of SSE event strings
      */
     public static function drain(string $channelName): array
     {
-        $cacheKey = self::CACHE_KEY_PREFIX.$channelName;
+        $cacheKey = self::CACHE_KEY_PREFIX . $channelName;
 
+        /** @var array<int, string> $events */
         $events = Cache::get($cacheKey, []);
 
-        if (! empty($events)) {
+        if (!empty($events)) {
             Cache::put($cacheKey, [], self::CACHE_TTL);
         }
 
@@ -179,9 +182,9 @@ class GalePushChannel
      * Polls for new events every 500ms and emits them.
      * Connection closes when the client disconnects.
      *
-     * @param  string  $channelName  Channel name to serve
-     * @param  int  $pollIntervalMs  Polling interval in milliseconds (default: 500)
-     * @param  int  $maxDuration  Maximum connection duration in seconds (default: 300)
+     * @param string $channelName Channel name to serve
+     * @param int $pollIntervalMs Polling interval in milliseconds (default: 500)
+     * @param int $maxDuration Maximum connection duration in seconds (default: 300)
      */
     public static function stream(string $channelName, int $pollIntervalMs = 500, int $maxDuration = 300): StreamedResponse
     {
@@ -230,8 +233,8 @@ class GalePushChannel
     /**
      * Format an SSE event string
      *
-     * @param  string  $eventType  SSE event type
-     * @param  array<int, string>  $dataLines  Data lines
+     * @param string $eventType SSE event type
+     * @param array<int, string> $dataLines Data lines
      */
     protected function formatEvent(string $eventType, array $dataLines): string
     {
@@ -244,52 +247,54 @@ class GalePushChannel
 
         $output[] = '';
 
-        return implode("\n", $output)."\n";
+        return implode("\n", $output) . "\n";
     }
 
     /**
      * Build data lines for gale-patch-state event
      *
-     * @param  array<string, mixed>  $state
+     * @param array<string, mixed> $state
+     *
      * @return array<int, string>
      */
     protected function buildStateLines(array $state): array
     {
         // State patch format: each key-value pair on its own data line
         // This matches the SSE parsing in parseStatePatch() on the frontend
-        return [json_encode($state)];
+        return [json_encode($state) ?: '{}'];
     }
 
     /**
      * Build data lines for gale-patch-elements event
      *
-     * @param  string  $html  HTML content
-     * @param  array<string, mixed>  $options  Patch options
+     * @param string $html HTML content
+     * @param array<string, mixed> $options Patch options
+     *
      * @return array<int, string>
      */
     protected function buildElementsLines(string $html, array $options): array
     {
         $dataLines = [];
 
-        if (! empty($options['selector'])) {
-            $dataLines[] = 'selector '.(string) $options['selector'];
+        if (!empty($options['selector']) && is_string($options['selector'])) {
+            $dataLines[] = 'selector ' . $options['selector'];
         }
 
-        if (! empty($options['mode'])) {
-            $dataLines[] = 'mode '.(string) $options['mode'];
+        if (!empty($options['mode']) && is_string($options['mode'])) {
+            $dataLines[] = 'mode ' . $options['mode'];
         }
 
         if (isset($options['useViewTransition'])) {
-            $dataLines[] = 'useViewTransition '.($options['useViewTransition'] ? 'true' : 'false');
+            $dataLines[] = 'useViewTransition ' . ($options['useViewTransition'] ? 'true' : 'false');
         }
 
-        if (! empty($options['settle'])) {
-            $dataLines[] = 'settle '.(int) $options['settle'];
+        if (!empty($options['settle']) && is_int($options['settle'])) {
+            $dataLines[] = 'settle ' . $options['settle'];
         }
 
         // HTML lines (last, may be multi-line)
         foreach (explode("\n", $html) as $line) {
-            $dataLines[] = 'html '.$line;
+            $dataLines[] = 'html ' . $line;
         }
 
         return $dataLines;
