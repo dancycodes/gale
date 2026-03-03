@@ -264,6 +264,28 @@ class GaleRedirect implements Responsable
             return; // Same origin — allowed
         }
 
+        // Also check against the configured app.url host — in some test environments
+        // (e.g. Pest browser tests), the URL generator produces URLs with the app.url host
+        // while the request Host header reflects a different hostname. Both are legitimate
+        // application origins and should be treated as same-origin for redirect safety.
+        $appUrl = config('app.url', '');
+        if ($appUrl) {
+            $appParsed = parse_url((string) $appUrl);
+            if (isset($appParsed['host'])) {
+                $appHost = strtolower($appParsed['host']);
+                $appPort = $appParsed['port'] ?? null;
+                $appScheme = isset($appParsed['scheme']) ? strtolower($appParsed['scheme']) : null;
+
+                $isSameAsAppHost = $urlHost === $appHost;
+                $isSameAsAppPort = ($urlPort === null) || ($appPort === null) || ($urlPort === $appPort);
+                $isSameAsAppScheme = ($appScheme === null) || ($urlScheme === $appScheme);
+
+                if ($isSameAsAppHost && $isSameAsAppPort && $isSameAsAppScheme) {
+                    return; // Matches configured app.url origin — allowed
+                }
+            }
+        }
+
         // Check allow_external config
         $allowExternal = (bool) config('gale.redirect.allow_external', false);
 
