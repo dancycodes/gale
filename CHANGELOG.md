@@ -7,14 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.0.0] - 2026-03-03
+## [0.5.0] - 2026-03-03
 
 Production-readiness overhaul of the Gale Laravel package. This release resolves all known
 bugs from the 0.x series, hardens security, adds a full suite of missing capabilities, improves
 Laravel standards integration, introduces a built-in debug panel, and ships comprehensive
 documentation and a Pest test suite.
 
-**Companion package:** requires `dancycodes/alpine-gale` ^2.0.0
+**Companion package:** requires `dancycodes/alpine-gale` ^0.5.0
 
 ### Added
 
@@ -199,7 +199,7 @@ documentation and a Pest test suite.
 ## [0.1.0] - 2025-11-23
 
 > **Pre-release Version**: Laravel Gale was in active development during this phase. The API
-> stabilized in 2.0.0.
+> stabilized in 0.5.0.
 
 ### Added
 
@@ -220,6 +220,6 @@ documentation and a Pest test suite.
 - **Developer Tools:** `GaleSSE` application helper, `GaleBase64Validator` custom rule,
   test dashboard at `/gale-test`
 
-[Unreleased]: https://github.com/dancycodes/gale/compare/v2.0.0...HEAD
-[2.0.0]: https://github.com/dancycodes/gale/compare/v0.1.0...v2.0.0
+[Unreleased]: https://github.com/dancycodes/gale/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/dancycodes/gale/compare/v0.1.0...v0.5.0
 [0.1.0]: https://github.com/dancycodes/gale/releases/tag/v0.1.0
