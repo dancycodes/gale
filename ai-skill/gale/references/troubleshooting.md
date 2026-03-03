@@ -1,419 +1,335 @@
-# Gale Troubleshooting Reference
+# Debug & Troubleshooting Reference
 
-Common issues and their solutions when working with Gale.
+Complete guide for diagnosing and fixing Gale issues: debug panel, console logging, server-side debug helper, error overlay, DevTools inspection, performance diagnostics, mode-specific debugging, and server infrastructure.
 
 ---
 
-## State Not Updating
+## Table of Contents
 
-**Symptom:** Button click sends request but Alpine state doesn't change.
+- [Debugging Checklist](#debugging-checklist)
+- [Debug Panel](#debug-panel)
+- [Console Logging](#console-logging)
+- [Server-Side Debug Helper](#server-side-debug-helper)
+- [Error Overlay](#error-overlay)
+- [Browser DevTools](#browser-devtools)
+- [Performance Diagnostics](#performance-diagnostics)
+- [Mode-Specific Debugging](#mode-specific-debugging)
+- [Server Infrastructure (SSE)](#server-infrastructure-sse)
+- [Common Issues Quick Reference](#common-issues-quick-reference)
 
-**Cause 1: No x-sync and no include option**
-```html
-<!-- ❌ No state sent -->
-<div x-data="{ count: 0 }">
-    <button @click="$action('/increment')">+</button>
-</div>
+---
 
-<!-- ✅ Fix: Add x-sync -->
-<div x-data="{ count: 0 }" x-sync>
-    <button @click="$action('/increment')">+</button>
-</div>
+## Debugging Checklist
 
-<!-- ✅ Fix: Or use include per-action -->
-<div x-data="{ count: 0 }">
-    <button @click="$action('/increment', { include: ['count'] })">+</button>
-</div>
-```
+Follow this sequence for any Gale issue:
 
-**Cause 2: Backend not returning gale() response**
+1. **Gale loaded?** — Console shows `[Gale]` log. `@gale` in `<head>` (not `<body>`).
+2. **Request sent?** — DevTools Network tab shows request on action trigger. No request = missing `x-data` or `@click`.
+3. **Response correct?** — HTTP mode: `Content-Type: application/json` with `{ "events": [...] }`. SSE mode: `Content-Type: text/event-stream` with `event:` / `data:` lines.
+4. **Controller returns gale()?** — Bare `view()`, `response()`, or `redirect()` won't trigger reactive updates.
+5. **State keys match?** — `patchState(['count' => 1])` key must match `x-data` property exactly. Check Debug Panel > State tab.
+6. **Client errors?** — Debug Panel > Errors tab, or console for `[Gale]` errors. Error Overlay appears for 5xx when `APP_DEBUG=true`.
+7. **Narrow location** — Server (wrong response data), Transport (SSE buffering, proxy timeout), Client (key mismatch, expression error, morph ID collision).
+
+---
+
+## Debug Panel
+
+Floating overlay in browser bottom-right. Active only in development.
+
+### Enable
 ```php
-// ❌ Wrong
-return response()->json(['count' => 1]);
+// config/gale.php
+'debug' => env('GALE_DEBUG', false),
+```
+```env
+GALE_DEBUG=true
+```
+Run `php artisan config:clear` after changing `.env`.
 
-// ✅ Correct
-return gale()->state('count', 1);
+### Toggle
+**Ctrl+Shift+G** (Win/Linux) or **Cmd+Shift+G** (Mac). Remembers open/closed state via `localStorage`.
+
+### Panel Not Showing?
+1. `php artisan config:clear`
+2. `php artisan vendor:publish --tag=gale-assets --force`
+3. `npm run build`
+4. Verify `@gale` is in `<head>`, not `<body>`
+5. Console: `window.GALE_DEBUG_MODE` should be `true`
+6. Hard refresh: Ctrl+Shift+R
+
+### Tabs
+
+**Requests** — Every Gale request: method, URL, status, duration, mode badge (HTTP/SSE). Click to expand full request/response.
+
+**State** — State diffs after every server patch. Shows changed (yellow), added (green), removed (red) keys with before/after values.
+
+> If State tab shows correct data but UI doesn't update → problem is in Alpine template (`x-text`, `x-show`, `x-model`), not the server.
+
+**Errors** — All Gale errors with type, status, and context. Dismissed overlay errors still appear here.
+
+### Clear Data
+```javascript
+Alpine.gale.debug.clear();  // in browser console
+```
+Auto-FIFO at 100 entries per tab.
+
+---
+
+## Console Logging
+
+All entries prefixed with `[Gale]`. Filter console by `[Gale]` to isolate.
+
+### Log Levels
+
+| Level | What It Logs |
+|-------|-------------|
+| `off` | Nothing. Default in production. |
+| `info` | Request summaries, navigation events, errors. Default in dev. |
+| `verbose` | Everything + state diffs, DOM morph details, SSE event parsing, dispatches. |
+
+### Set Level
+```html
+<!-- Before Alpine init (in <head>) -->
+<script>window.GALE_DEBUG = 'verbose';</script>
+```
+```javascript
+// At runtime
+Alpine.gale.configure({ debug: { logLevel: 'verbose' } });
 ```
 
-**Cause 3: No Alpine context**
-```html
-<!-- ❌ No x-data parent -->
-<button @click="$action('/save')">Save</button>
-
-<!-- ✅ Add x-data -->
-<div x-data="{ count: 0 }">
-    <button @click="$action('/save')">Save</button>
-</div>
+### Output Examples
+```
+info:    [Gale] POST /increment -> 200 (45ms)
+info:    [Gale] Navigate: /dashboard
+verbose: [Gale] State diff (/increment): 2 changes
+verbose: [Gale] Morph: #result-list [inner] (3 changed, 1 added)
+verbose: [Gale] SSE event: gale-patch-state
 ```
 
 ---
 
-## Fragment Not Replacing
+## Server-Side Debug Helper
 
-**Symptom:** Fragment renders but DOM doesn't update.
+`gale()->debug()` sends data from PHP to the browser's Debug Panel.
 
-**Cause 1: Missing ID on fragment root element**
-```blade
-<!-- ❌ No ID — Gale can't find element to patch -->
-@fragment('items')
-<div>
-    @foreach($items as $item) ... @endforeach
-</div>
-@endfragment
-
-<!-- ✅ Add ID -->
-@fragment('items')
-<div id="items-list">
-    @foreach($items as $item) ... @endforeach
-</div>
-@endfragment
-```
-
-**Cause 2: Fragment name mismatch**
 ```php
-// ❌ Fragment name doesn't match blade
-gale()->fragment('items.index', 'item-list', $data);
+// Basic
+gale()->debug($result);
 
-// ✅ Must match @fragment('items-list')
-gale()->fragment('items.index', 'items-list', $data);
+// Labeled (appears as separate entries)
+gale()->debug($request->all(), 'Input');
+gale()->debug($result->toArray(), 'Computed Result');
+
+// In SSE streaming — emits at exact point in stream
+return gale()->stream(function ($gale) {
+    $gale->debug(['phase' => 'start'], 'Progress');
+    $result = $this->expensiveOperation();
+    $gale->debug($result->toArray(), 'Done');
+    $gale->patchState(['result' => $result->formatted()]);
+});
 ```
 
-**Cause 3: View path incorrect**
+**Accepts any PHP value**: scalars, arrays, `JsonSerializable`, Eloquent models (via `toArray()`), closures (string repr), circular refs (truncated).
+
+**Production safe**: No-op when `config('app.debug')` is `false`. Safe to leave in code.
+
+> Do not pass passwords, tokens, or PII to `debug()` even with this safety guarantee.
+
+---
+
+## Error Overlay
+
+Full-screen modal in development for unhandled errors.
+
+### Triggers Overlay
+- **5xx server errors** — red overlay with status, message, context, response body
+- **419 CSRF expired** — red overlay with "reload the page" instruction
+- **Client-side JS errors** during Gale ops — orange overlay with error + stack trace
+
+### Does NOT Trigger
+- 422 validation errors (shown via `x-message`)
+- 401/403 authorization errors (handled via `gale:error` events)
+- 429 rate limit (handled via `gale:error` events)
+
+### Dismiss
+Escape key, X button, backdrop click, or Dismiss button. Queued errors appear sequentially.
+
+### Disable
 ```php
-// ❌ Wrong view path
-gale()->fragment('items', 'items-list', $data);
-
-// ✅ Use dot notation matching file path
-gale()->fragment('items.index', 'items-list', $data);
+// config/gale.php
+'error_overlay' => env('GALE_ERROR_OVERLAY', true),
 ```
+```env
+GALE_ERROR_OVERLAY=false
+```
+Auto-disabled in production (`APP_DEBUG=false`).
 
 ---
 
-## $fetching Not Working
+## Browser DevTools
 
-**Symptom:** `$fetching()` always returns false.
-
-**Cause: Missing parentheses**
-```html
-<!-- ❌ Wrong — property access, not function call -->
-<span x-show="$fetching">Loading...</span>
-
-<!-- ✅ Correct — function call -->
-<span x-show="$fetching()">Loading...</span>
-```
-
----
-
-## CSRF Token Mismatch (419)
-
-**Symptom:** POST requests return 419 error.
-
-**Cause 1: Missing @gale directive**
-```blade
-<!-- ❌ No CSRF meta tag -->
-<head></head>
-
-<!-- ✅ @gale outputs CSRF meta + Alpine + Gale -->
-<head>@gale</head>
-```
-
-**Cause 2: Expired session**
-The CSRF token is read from `<meta name="csrf-token">`. If the session expires, the token becomes stale. Gale's retry mechanism will handle this, but for long-lived pages consider refreshing the token.
-
----
-
-## Duplicate Alpine.js Errors
-
-**Symptom:** Console errors about Alpine being initialized twice.
-
-**Cause: @gale + separate Alpine script**
-```blade
-<!-- ❌ Duplicate Alpine -->
-<head>
-    @gale
-    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
-</head>
-
-<!-- ✅ Remove separate Alpine — @gale includes it -->
-<head>
-    @gale
-</head>
-```
-
-Also check `resources/js/app.js` for `import Alpine from 'alpinejs'` — remove it.
-
----
-
-## Navigation Not Working
-
-**Symptom:** Links cause full page reload instead of SPA navigation.
-
-**Cause 1: Missing x-navigate on container or link**
-```html
-<!-- ❌ No navigation handling -->
-<a href="/page">Link</a>
-
-<!-- ✅ Add x-navigate -->
-<div x-data x-navigate>
-    <a href="/page">Now it works</a>
-</div>
-```
-
-**Cause 2: Missing x-data context**
-```html
-<!-- ❌ x-navigate without Alpine context -->
-<div x-navigate>
-    <a href="/page">Won't work</a>
-</div>
-
-<!-- ✅ Add x-data -->
-<div x-data x-navigate>
-    <a href="/page">Works</a>
-</div>
-```
-
-**Cause 3: Backend not handling navigate request**
-```php
-// ❌ Returns full page for navigate requests too
-public function index()
+### Network Tab — HTTP Mode
+1. Filter by **Fetch/XHR**
+2. Trigger action
+3. Check response: `Content-Type: application/json`
+4. Response body should be:
+```json
 {
-    return view('page');
-}
-
-// ✅ Check for navigate and return fragments
-public function index(Request $request)
-{
-    $data = $this->getData();
-
-    if ($request->isGaleNavigate('content')) {
-        return gale()->fragment('page', 'content', $data);
-    }
-    return gale()->view('page', $data, web: true);
+  "events": [
+    { "type": "gale-patch-state", "data": { "updates": { "count": 1 } } }
+  ]
 }
 ```
+**If response is HTML** → controller not returning `gale()->...`
+
+### Network Tab — SSE Mode
+1. Filter by **Other**
+2. Trigger SSE action: `$action('/url', {sse: true})`
+3. Check: `Content-Type: text/event-stream`
+4. **EventStream tab (Chrome)** shows each event as it arrives
+
+**If EventStream missing** → server not in SSE mode. Check controller uses `gale()->stream()`.
+
+### Console Tab
+Filter by `[Gale]`. At `info` level: one-line per request. At `verbose`: expand collapsed groups for state diffs and morph details.
+
+### Elements Panel
+Watch for morph flashes when triggering actions. `verbose` mode logs: `[Gale] Morph: #my-list [inner] (2 changed)`.
 
 ---
 
-## Validation Errors Not Showing
+## Performance Diagnostics
 
-**Symptom:** Server validates but errors don't appear in UI.
+### Timing (Debug Panel > Requests)
 
-**Cause 1: Missing x-message directive**
-```html
-<!-- ❌ No error display -->
-<input x-name="email">
+| Phase | Measures |
+|-------|----------|
+| Request → TTFB | Network + server processing |
+| TTFB → Response end | Response body transfer |
+| State patch | RFC 7386 merge into Alpine |
+| DOM morph | Element update/morph |
+| Total | End-to-end |
 
-<!-- ✅ Add x-message -->
-<input x-name="email">
-<p x-message="email" class="text-red-600 text-sm"></p>
-```
+Warning badges: Yellow >500ms TTFB, Orange >100ms morph, Red >1000ms total.
 
-**Cause 2: Message key mismatch**
-```php
-// Server validates 'email_address'
-$request->validateState(['email_address' => 'required|email']);
-```
-```html
-<!-- ❌ Key doesn't match -->
-<p x-message="email"></p>
-
-<!-- ✅ Must match validation key -->
-<p x-message="email_address"></p>
-```
-
-**Cause 3: Using validate() instead of validateState()**
-```php
-// ❌ For Alpine state, this won't work correctly
-$request->validate(['email' => 'required|email']);
-
-// ✅ Use validateState() for Alpine state
-$request->validateState(['email' => 'required|email']);
-```
-
----
-
-## outerMorph Not Preserving State
-
-**Symptom:** Using outerMorph but Alpine state still resets.
-
-**Cause: ID mismatch between old and new HTML**
-```php
-// ❌ New HTML has different structure/ID
-$html = '<div id="item-new">...</div>';
-gale()->outerMorph('#item-1', $html);
-
-// ✅ IDs must match for morph to work
-$html = '<div id="item-1">...updated...</div>';
-gale()->outerMorph('#item-1', $html);
-```
-
----
-
-## Streaming Not Working
-
-**Symptom:** All events arrive at once instead of progressively.
-
-**Cause 1: Not using stream()**
-```php
-// ❌ Events batch and send together
-$gale = gale();
-foreach ($items as $item) {
-    $gale->state('progress', $i);
-}
-return $gale;
-
-// ✅ Use stream() for immediate delivery
-return gale()->stream(function ($gale) use ($items) {
-    foreach ($items as $i => $item) {
-        $gale->state('progress', $i);
+### Configure Thresholds
+```javascript
+Alpine.gale.configure({
+    debug: {
+        thresholds: {
+            response: 300,  // ms (default 500)
+            domMorph: 50,   // ms (default 100)
+            total: 800,     // ms (default 1000)
+        }
     }
 });
 ```
 
-**Cause 2: Output buffering**
-Check for `ob_start()` or middleware that buffers output. Streaming requires unbuffered output.
+### Large Responses
+- Return only changed state keys, not full component state
+- Use `gale()->fragment()` for partial HTML updates
+- Use `patchState()` with minimal keys
+
+### Morph Frequency
+Set `verbose` logging, trigger action, count `[Gale] Morph:` lines. Multiple morphs per request = consolidate `patchElements()` calls server-side.
+
+### Memory (Long-Running Pages)
+1. DevTools > Memory > baseline heap snapshot
+2. Run 50-100 polling cycles
+3. Compare snapshots — look for growing component counts or detached DOM
+4. Fix: ensure `x-interval` cleanup, `onMorph()` hooks unregistered, `x-init` listeners cleaned up
 
 ---
 
-## File Upload Issues
+## Mode-Specific Debugging
 
-**Symptom:** Files not received by server.
+### HTTP Mode Issues
 
-**Cause 1: Missing x-files directive on the input**
-```html
-<!-- ❌ Files not tracked -->
-<input type="file" name="images">
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| Response is HTML not JSON | Controller returns `view()` | Use `gale()->view()` |
+| JSON parse error in console | Server returned error page/redirect | Check Network response body, enable `APP_DEBUG=true` |
+| `Content-Type: text/html` | Middleware intercepted before Gale | Check middleware order in `bootstrap/app.php` |
+| Action works once then stops | CSRF token expired (419) | Reload page, check session lifetime |
 
-<!-- ✅ Add x-files on the input element -->
-<div x-data>
-    <input type="file" name="images" x-files multiple>
-</div>
-```
+### SSE Mode Issues
 
-**Cause 2: Using validateState() for files**
-```php
-// ❌ Files come via FormData, not Alpine state
-$request->validateState(['images' => 'required']);
-
-// ✅ Use standard Laravel validation for files
-$request->validate(['images.*' => 'required|image|max:5120']);
-```
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| SSE fires once, closes | Normal — SSE is per-request, not persistent | Expected behavior |
+| EventStream shows no events | Proxy buffering SSE | Set `proxy_buffering off;` in Nginx |
+| Events arrive in batches | PHP output buffering | Use `gale()->stream()` (handles automatically) |
+| Connection drops every 30s | Load balancer timeout | Increase idle timeout |
+| State patches received but no update | Component name mismatch | Check `x-component` matches `patchComponent()` |
+| 422 in SSE but form is correct | Validation needs HTTP response | `gale()->messages($errors)->forceHttp()` |
 
 ---
 
-## Component State Not Updating
+## Server Infrastructure (SSE)
 
-**Symptom:** `componentState()` called but component doesn't update.
-
-**Cause 1: Component not registered**
-```html
-<!-- ❌ No x-component -->
-<div x-data="{ value: 0 }">
-    <span x-text="value"></span>
-</div>
-
-<!-- ✅ Register with x-component -->
-<div x-data="{ value: 0 }" x-component="my-widget">
-    <span x-text="value"></span>
-</div>
-```
-
-**Cause 2: Name mismatch**
-```php
-// ❌ Name doesn't match
-gale()->componentState('myWidget', ['value' => 42]);
-
-// ✅ Must match x-component attribute exactly
-gale()->componentState('my-widget', ['value' => 42]);
-```
-
----
-
-## Polling Issues
-
-**Symptom:** Polling doesn't start or stops unexpectedly.
-
-**Cause 1: Missing time modifier**
-```html
-<!-- ❌ No interval specified -->
-<div x-interval="refresh()">
-
-<!-- ✅ Specify interval -->
-<div x-interval.5s="refresh()">
-```
-
-**Cause 2: x-interval-stop evaluating true immediately**
-```html
-<!-- ❌ Starts stopped -->
-<div x-data="{ done: true }" x-interval.5s="check()" x-interval-stop="done">
-
-<!-- ✅ Start with false -->
-<div x-data="{ done: false }" x-interval.5s="check()" x-interval-stop="done">
-```
-
----
-
-## Non-Gale Request Errors (LogicException)
-
-**Symptom:** First page load throws error.
-
-**Cause: No web fallback**
-```php
-// ❌ No fallback for initial page load
-return gale()->state('data', $data);
-
-// ✅ Provide web fallback
-return gale()->view('page', $data, web: true);
-
-// ✅ Or use web() method
-return gale()->state('data', $data)->web(view('page', compact('data')));
-```
-
----
-
-## Redirect Not Working in Gale Requests
-
-**Symptom:** Standard Laravel redirect() doesn't work with Gale requests.
-
-**Cause: Using Laravel's redirect() instead of gale()->redirect()**
-```php
-// ❌ Standard redirect won't work for SSE requests
-return redirect('/dashboard');
-
-// ✅ Use Gale redirect
-return gale()->redirect('/dashboard');
-
-// ✅ With flash data
-return gale()->redirect('/dashboard')->with('message', 'Saved!');
-```
-
----
-
-## Back Button Causes Full Page Reload
-
-**Symptom:** Clicking browser back/forward after Gale navigation causes a full page reload instead of SPA-style transition.
-
-**This is expected behavior.** Gale uses `history.pushState()` for URL updates during navigation, and the popstate handler intentionally triggers `window.location.reload()`. This ensures:
-- Correct state on every page (no stale Alpine data)
-- No mismatch between server and client state
-- Reliable behavior regardless of how many navigations occurred
-
-**If you need SPA-like back behavior**, consider using fragments and navigate keys so the reload only fetches the changed content:
-```php
-if ($request->isGaleNavigate('content')) {
-    return gale()->fragment('page', 'content', $data);
+### Nginx — Disable Buffering
+```nginx
+location / {
+    proxy_buffering off;
+    proxy_cache off;
+    proxy_set_header X-Accel-Buffering no;
+    proxy_set_header Connection '';
+    proxy_http_version 1.1;
+    chunked_transfer_encoding on;
 }
-return gale()->view('page', $data, web: true);
+```
+`gale()->stream()` sets `X-Accel-Buffering: no` automatically.
+
+### Apache — Disable Buffering
+```apache
+<Location />
+    ProxyPass http://your-backend/
+    SetEnv proxy-nokeepalive 1
+    SetEnv proxy-initial-not-pooled 1
+</Location>
+```
+
+### Load Balancer Timeouts
+- **AWS ALB**: Target group idle timeout → 3600s
+- **HAProxy**: `timeout tunnel 1h`
+- **Nginx LB**: `proxy_read_timeout 3600s;`
+- **Laravel Herd**: No config needed — handles SSE correctly
+
+### PHP-FPM
+```ini
+# /etc/php/8.4/fpm/pool.d/www.conf
+request_terminate_timeout = 3600
+```
+`gale()->stream()` calls `set_time_limit(0)` automatically.
+
+### CSP (Content Security Policy)
+```blade
+@gale(['nonce' => $nonce])
+```
+Same-origin SSE needs no extra CSP. Cross-origin:
+```
+Content-Security-Policy: connect-src 'self' https://api.example.com;
 ```
 
 ---
 
-## Common Performance Tips
+## Common Issues Quick Reference
 
-1. **Use fragments over full views** — Only re-render what changed
-2. **Use outerMorph for interactive elements** — Preserves user input
-3. **Use x-interval.visible** — Stop polling when tab hidden
-4. **Use { include: [...] }** — Send only needed state, not everything
-5. **Use settle for animations** — `['settle' => 200]` gives CSS time to animate
-6. **Use componentState for multi-widget updates** — One request, many updates
-7. **Use streaming for long operations** — Progressive feedback
+| # | Symptom | Fix |
+|---|---------|-----|
+| 1 | Nothing happens on click | Wrap in `<div x-data="{ ... }">` — Gale needs Alpine context |
+| 2 | Page doesn't react to responses | Return `gale()->view()` not `view()` |
+| 3 | State doesn't update | Key name mismatch — check Debug Panel > State tab |
+| 4 | Validation errors don't appear | Add `messages: {}` to `x-data`, check `x-message` field name |
+| 5 | File upload 422 | Use `$action()` (includes CSRF) not `$post()` for uploads |
+| 6 | Full reload instead of SPA | Add `x-navigate` to link/container, target must return `gale()->view()` |
+| 7 | SSE receives no events | Nginx buffering — set `proxy_buffering off;` |
+| 8 | `ReferenceError` in Alpine | State key deleted by `null` — use `$data.key ?? ''` |
+| 9 | `$action` no network request | Missing `x-data`, or earlier JS error stopped Alpine |
+| 10 | UI wrong despite correct state | Template expression error — check `x-text`/`x-show`/`x-model` |
+| 11 | SSE drops, no reconnect | Load balancer/proxy timeout — increase timeout |
+| 12 | `debug()` entries missing | Both `APP_DEBUG=true` AND `GALE_DEBUG=true` required |
+| 13 | CSRF 419 on every request | Reload page, check session lifetime |
+| 14 | Console log spam | Set `Alpine.gale.configure({ debug: { logLevel: 'info' } })` |
+| 15 | Error overlay blocks UI | Press Escape to dismiss. Fix underlying 5xx. Or `GALE_ERROR_OVERLAY=false` |
