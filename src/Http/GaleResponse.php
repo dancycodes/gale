@@ -631,6 +631,9 @@ class GaleResponse implements Responsable
             'Content-Type' => 'text/event-stream',
             'X-Accel-Buffering' => 'no',
             'X-Gale-Response' => 'true',
+            // Vary on Gale-Request so browsers/CDNs never serve cached Gale JSON
+            // for a regular browser navigation (back button, idle reload, bfcache).
+            'Vary' => 'Gale-Request',
         ];
 
         $protocol = $_SERVER['SERVER_PROTOCOL'] ?? '';
@@ -2354,6 +2357,7 @@ class GaleResponse implements Responsable
 
                 // BR-F027-05: SSE streaming responses must never be cached
                 $response->headers->set('Cache-Control', 'no-store');
+                $response->headers->set('Vary', 'Gale-Request');
 
                 // F-064: Run after-hooks on the streaming response (headers can be modified before streaming starts)
                 return static::runAfterHooks($response, $request);
@@ -2365,10 +2369,12 @@ class GaleResponse implements Responsable
 
             if ($mode === 'http') {
                 // HTTP mode: return JsonResponse with serialized events (BR-004.1, BR-004.6)
-                // BR-F027-04: State patches use Cache-Control: no-cache (revalidate, allow conditional)
+                // Cache-Control: no-store prevents browsers from caching JSON responses that
+                // could be served for regular browser navigation (back button, idle reload).
                 $responseHeaders = array_merge([
                     'X-Gale-Response' => 'true',
-                    'Cache-Control' => 'no-cache',
+                    'Cache-Control' => 'no-store',
+                    'Vary' => 'Gale-Request',
                 ], $extraHeaders);
 
                 // BR-F027-01, BR-F027-08: Add ETag header when opt-in is set
@@ -2392,6 +2398,7 @@ class GaleResponse implements Responsable
                             'ETag' => $etag,
                             'X-Gale-Response' => 'true',
                             'Cache-Control' => 'no-cache',
+                            'Vary' => 'Gale-Request',
                         ]);
                     }
                 }

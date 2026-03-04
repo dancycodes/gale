@@ -141,6 +141,15 @@ class AddGaleSecurityHeaders
             $this->setHeaderSafe($response, 'Pragma', 'no-cache');
         }
 
+        // --- Vary: Gale-Request (content negotiation cache key) ---
+        // Tells browsers/CDNs that responses differ based on the Gale-Request header.
+        // Prevents cached Gale JSON from being served for regular browser navigation.
+        $existingVary = $response->headers->get('Vary', '');
+        if (!str_contains((string) $existingVary, 'Gale-Request')) {
+            $vary = $existingVary ? $existingVary . ', Gale-Request' : 'Gale-Request';
+            $this->setHeaderSafe($response, 'Vary', $vary);
+        }
+
         // --- X-Accel-Buffering: no — SSE only (BR-022.4) ---
         if ($isSSE && !$response->headers->has('X-Accel-Buffering')) {
             $this->setHeaderSafe($response, 'X-Accel-Buffering', 'no');
