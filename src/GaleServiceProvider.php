@@ -235,22 +235,201 @@ PHP;
      *
      * Validated keys:
      * - gale.mode: must be 'http' or 'sse'
+     * - gale.morph_markers: must be boolean
+     * - gale.debug: must be boolean
+     * - gale.sanitize_html: must be boolean
+     * - gale.allow_scripts: must be boolean
+     * - gale.csp_nonce: must be null, 'auto', or a non-empty string
+     * - gale.redirect.allowed_domains: must be an array of strings
+     * - gale.redirect.allow_external: must be boolean
+     * - gale.redirect.log_blocked: must be boolean
+     * - gale.headers.x_content_type_options: must be a non-empty string or false
+     * - gale.headers.x_frame_options: must be 'SAMEORIGIN', 'DENY', or false
+     * - gale.headers.x_frame_options: string value is case-insensitive (normalized)
+     * - gale.headers.cache_control: must be a non-empty string or false
+     * - gale.headers.custom: must be an array
      *
      * Config file not published uses package defaults which are always valid.
+     * Environment variable overrides that produce invalid values are caught here
+     * with clear exception messages including env var hints where applicable.
      *
      * @throws \InvalidArgumentException When a config value is not within its allowed range
      */
     private function validateConfig(): void
     {
+        // --- gale.mode (BR-F028-07) ---
         $allowedModes = ['http', 'sse'];
         $mode = config('gale.mode');
 
         if (!in_array($mode, $allowedModes, strict: true)) {
             throw new \InvalidArgumentException(
                 sprintf(
-                    'Invalid gale.mode value "%s". Allowed: %s',
-                    is_scalar($mode) ? (string) $mode : '[invalid]',
+                    'Invalid gale.mode value "%s". Allowed: %s. Check GALE_MODE env variable if set.',
+                    is_scalar($mode) ? (string) $mode : gettype($mode),
                     implode(', ', $allowedModes)
+                )
+            );
+        }
+
+        // --- gale.morph_markers ---
+        $morphMarkers = config('gale.morph_markers');
+        if (!is_bool($morphMarkers)) {
+            throw new \InvalidArgumentException(
+                sprintf(
+                    'Invalid gale.morph_markers value "%s". Must be a boolean (true or false). Check GALE_MORPH_MARKERS env variable if set.',
+                    is_scalar($morphMarkers) ? (string) $morphMarkers : gettype($morphMarkers)
+                )
+            );
+        }
+
+        // --- gale.debug ---
+        $debug = config('gale.debug');
+        if (!is_bool($debug)) {
+            throw new \InvalidArgumentException(
+                sprintf(
+                    'Invalid gale.debug value "%s". Must be a boolean (true or false). Check GALE_DEBUG env variable if set.',
+                    is_scalar($debug) ? (string) $debug : gettype($debug)
+                )
+            );
+        }
+
+        // --- gale.sanitize_html ---
+        $sanitizeHtml = config('gale.sanitize_html');
+        if (!is_bool($sanitizeHtml)) {
+            throw new \InvalidArgumentException(
+                sprintf(
+                    'Invalid gale.sanitize_html value "%s". Must be a boolean (true or false). Check GALE_SANITIZE_HTML env variable if set.',
+                    is_scalar($sanitizeHtml) ? (string) $sanitizeHtml : gettype($sanitizeHtml)
+                )
+            );
+        }
+
+        // --- gale.allow_scripts ---
+        $allowScripts = config('gale.allow_scripts');
+        if (!is_bool($allowScripts)) {
+            throw new \InvalidArgumentException(
+                sprintf(
+                    'Invalid gale.allow_scripts value "%s". Must be a boolean (true or false). Check GALE_ALLOW_SCRIPTS env variable if set.',
+                    is_scalar($allowScripts) ? (string) $allowScripts : gettype($allowScripts)
+                )
+            );
+        }
+
+        // --- gale.csp_nonce ---
+        $cspNonce = config('gale.csp_nonce');
+        if ($cspNonce !== null && (!is_string($cspNonce) || $cspNonce === '')) {
+            throw new \InvalidArgumentException(
+                sprintf(
+                    'Invalid gale.csp_nonce value "%s". Must be null, or a non-empty string (e.g., "auto" or a nonce value). Check GALE_CSP_NONCE env variable if set.',
+                    is_scalar($cspNonce) ? (string) $cspNonce : gettype($cspNonce)
+                )
+            );
+        }
+
+        // --- gale.redirect (section) ---
+        $this->validateRedirectConfig();
+
+        // --- gale.headers (section) ---
+        $this->validateHeadersConfig();
+    }
+
+    /**
+     * Validate the redirect security configuration section
+     *
+     * @throws \InvalidArgumentException When a redirect config value is invalid
+     */
+    private function validateRedirectConfig(): void
+    {
+        $allowedDomains = config('gale.redirect.allowed_domains');
+        if (!is_array($allowedDomains)) {
+            throw new \InvalidArgumentException(
+                sprintf(
+                    'Invalid gale.redirect.allowed_domains value. Must be an array of domain strings, got %s.',
+                    gettype($allowedDomains)
+                )
+            );
+        }
+
+        foreach ($allowedDomains as $i => $domain) {
+            if (!is_string($domain) || $domain === '') {
+                throw new \InvalidArgumentException(
+                    sprintf(
+                        'Invalid gale.redirect.allowed_domains[%d] value. Each entry must be a non-empty string, got %s.',
+                        $i,
+                        is_scalar($domain) ? '"' . $domain . '"' : gettype($domain)
+                    )
+                );
+            }
+        }
+
+        $allowExternal = config('gale.redirect.allow_external');
+        if (!is_bool($allowExternal)) {
+            throw new \InvalidArgumentException(
+                sprintf(
+                    'Invalid gale.redirect.allow_external value "%s". Must be a boolean (true or false).',
+                    is_scalar($allowExternal) ? (string) $allowExternal : gettype($allowExternal)
+                )
+            );
+        }
+
+        $logBlocked = config('gale.redirect.log_blocked');
+        if (!is_bool($logBlocked)) {
+            throw new \InvalidArgumentException(
+                sprintf(
+                    'Invalid gale.redirect.log_blocked value "%s". Must be a boolean (true or false).',
+                    is_scalar($logBlocked) ? (string) $logBlocked : gettype($logBlocked)
+                )
+            );
+        }
+    }
+
+    /**
+     * Validate the security headers configuration section
+     *
+     * @throws \InvalidArgumentException When a headers config value is invalid
+     */
+    private function validateHeadersConfig(): void
+    {
+        $xContentType = config('gale.headers.x_content_type_options');
+        if ($xContentType !== false && (!is_string($xContentType) || $xContentType === '')) {
+            throw new \InvalidArgumentException(
+                sprintf(
+                    'Invalid gale.headers.x_content_type_options value. Must be a non-empty string (e.g., "nosniff") or false to disable, got %s.',
+                    is_scalar($xContentType) ? '"' . $xContentType . '"' : gettype($xContentType)
+                )
+            );
+        }
+
+        $xFrameOptions = config('gale.headers.x_frame_options');
+        $allowedFrameOptions = ['SAMEORIGIN', 'DENY'];
+        if ($xFrameOptions !== false) {
+            if (!is_string($xFrameOptions) || !in_array(strtoupper($xFrameOptions), $allowedFrameOptions, strict: true)) {
+                throw new \InvalidArgumentException(
+                    sprintf(
+                        'Invalid gale.headers.x_frame_options value "%s". Allowed: %s, or false to disable.',
+                        is_scalar($xFrameOptions) ? (string) $xFrameOptions : gettype($xFrameOptions),
+                        implode(', ', $allowedFrameOptions)
+                    )
+                );
+            }
+        }
+
+        $cacheControl = config('gale.headers.cache_control');
+        if ($cacheControl !== false && (!is_string($cacheControl) || $cacheControl === '')) {
+            throw new \InvalidArgumentException(
+                sprintf(
+                    'Invalid gale.headers.cache_control value. Must be a non-empty string or false to disable, got %s.',
+                    is_scalar($cacheControl) ? '"' . $cacheControl . '"' : gettype($cacheControl)
+                )
+            );
+        }
+
+        $custom = config('gale.headers.custom');
+        if (!is_array($custom)) {
+            throw new \InvalidArgumentException(
+                sprintf(
+                    'Invalid gale.headers.custom value. Must be an array of header key-value pairs, got %s.',
+                    gettype($custom)
                 )
             );
         }

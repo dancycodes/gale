@@ -3,12 +3,39 @@
 return [
     /*
     |--------------------------------------------------------------------------
-    | Laravel Gale Configuration
+    | Laravel Gale Configuration (F-028)
     |--------------------------------------------------------------------------
     |
     | Configuration for Laravel Gale - a seamless integration of Alpine Gale
-    | with Laravel. These settings control route discovery and the default
-    | response mode for the Gale reactive response system.
+    | with Laravel. These settings control response mode, security, debug
+    | features, route discovery, and the Gale reactive response system.
+    |
+    | All values are validated during application boot. Invalid values throw
+    | InvalidArgumentException immediately for clear, fast failure rather
+    | than silently misbehaving at runtime.
+    |
+    | ┌─────────────────────────────┬──────────┬──────────────────────────────┬─────────────────────────────────┐
+    | │ Key                         │ Type     │ Default                      │ Valid Values / Range            │
+    | ├─────────────────────────────┼──────────┼──────────────────────────────┼─────────────────────────────────┤
+    | │ mode                        │ string   │ 'http'                       │ 'http', 'sse'                   │
+    | │ morph_markers               │ bool     │ true                         │ true, false                     │
+    | │ debug                       │ bool     │ false                        │ true, false                     │
+    | │ sanitize_html               │ bool     │ true                         │ true, false                     │
+    | │ allow_scripts               │ bool     │ false                        │ true, false                     │
+    | │ csp_nonce                   │ ?string  │ null                         │ null, 'auto', non-empty string  │
+    | │ redirect.allowed_domains    │ array    │ []                           │ array of non-empty strings      │
+    | │ redirect.allow_external     │ bool     │ false                        │ true, false                     │
+    | │ redirect.log_blocked        │ bool     │ true                         │ true, false                     │
+    | │ headers.x_content_type_opts │ string|f │ 'nosniff'                    │ non-empty string or false       │
+    | │ headers.x_frame_options     │ string|f │ 'SAMEORIGIN'                 │ 'SAMEORIGIN', 'DENY', false     │
+    | │ headers.cache_control       │ string|f │ 'no-store, no-cache, ...'    │ non-empty string or false       │
+    | │ headers.custom              │ array    │ []                           │ assoc array of header pairs     │
+    | │ route_discovery.enabled     │ bool     │ false                        │ true, false                     │
+    | │ route_discovery.conventions │ bool     │ true                         │ true, false                     │
+    | └─────────────────────────────┴──────────┴──────────────────────────────┴─────────────────────────────────┘
+    |
+    | Environment variables: GALE_MODE, GALE_MORPH_MARKERS, GALE_DEBUG,
+    | GALE_SANITIZE_HTML, GALE_ALLOW_SCRIPTS, GALE_CSP_NONCE
     |
     */
 
@@ -30,6 +57,8 @@ return [
     |
     | Individual requests can override this via the Gale-Mode request header,
     | and gale()->stream() always uses SSE regardless of this setting.
+    |
+    | Type: string | Default: 'http' | Allowed: 'http', 'sse' | Env: GALE_MODE
     |
     */
 
@@ -77,6 +106,10 @@ return [
     | SECURITY WARNING: Setting allow_external=true disables domain checking.
     | Only use this when you explicitly trust all redirect URLs your server emits.
     |
+    | allowed_domains — Type: array   | Default: []    | Items: non-empty strings
+    | allow_external  — Type: boolean | Default: false
+    | log_blocked     — Type: boolean | Default: true
+    |
     */
 
     'redirect' => [
@@ -108,6 +141,8 @@ return [
     | Set to false in production to omit markers and reduce HTML payload.
     | Note: disabling reduces morph accuracy when conditional blocks change.
     |
+    | Type: boolean | Default: true | Env: GALE_MORPH_MARKERS
+    |
     */
 
     'morph_markers' => env('GALE_MORPH_MARKERS', true),
@@ -122,6 +157,8 @@ return [
     | SSE response. Set to false in production to avoid the output buffer overhead.
     |
     | When false, dd() and dump() output will corrupt Gale responses as usual.
+    |
+    | Type: boolean | Default: false | Env: GALE_DEBUG
     |
     */
 
@@ -145,6 +182,9 @@ return [
     |
     | SECURITY WARNING: Setting sanitize_html=false disables all XSS protection.
     | Only do this if you fully trust all HTML content returned by your server.
+    |
+    | sanitize_html — Type: boolean | Default: true  | Env: GALE_SANITIZE_HTML
+    | allow_scripts — Type: boolean | Default: false | Env: GALE_ALLOW_SCRIPTS
     |
     */
 
@@ -187,6 +227,9 @@ return [
     | SECURITY WARNING: Never reuse nonces across requests. Each page load must
     | have a unique nonce generated via random_bytes(16) or similar.
     |
+    | Type: ?string | Default: null | Allowed: null, 'auto', non-empty string
+    | Env: GALE_CSP_NONCE
+    |
     */
 
     'csp_nonce' => env('GALE_CSP_NONCE', null),
@@ -220,6 +263,11 @@ return [
     |
     | custom:
     |   Add any additional HTTP response headers to all Gale responses. (BR-022.7)
+    |
+    | x_content_type_options — Type: string|false | Default: 'nosniff'
+    | x_frame_options        — Type: string|false | Default: 'SAMEORIGIN' | Allowed: 'SAMEORIGIN', 'DENY', false
+    | cache_control          — Type: string|false | Default: 'no-store, no-cache, must-revalidate'
+    | custom                 — Type: array        | Default: []
     |
     */
 
