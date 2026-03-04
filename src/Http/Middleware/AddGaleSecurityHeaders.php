@@ -114,11 +114,15 @@ class AddGaleSecurityHeaders
         }
 
         // --- Cache-Control (BR-022.3 for state-bearing, BR-022.5 for SSE) ---
-        // Cache-Control is always applied (even when already set by the framework) because
-        // GaleResponse sets a weak 'no-cache' default that must be strengthened.
-        // BR-022.9 "controller values win" applies to application-controller-set headers
-        // like X-Frame-Options, not to GaleResponse's own framework defaults.
-        if ($isSSE) {
+        // F-037: When the developer explicitly sets Cache-Control via withHeaders(),
+        // respect their choice (enables client-side response caching with max-age).
+        // The X-Gale-Developer-Cache-Control flag is set by GaleResponse::withHeaders()
+        // when Cache-Control is explicitly provided by the application controller.
+        $developerSetCacheControl = $response->headers->has('X-Gale-Developer-Cache-Control');
+        if ($developerSetCacheControl) {
+            // Remove the internal flag header — it should not be sent to the client
+            $response->headers->remove('X-Gale-Developer-Cache-Control');
+        } elseif ($isSSE) {
             // SSE responses use 'no-cache' — no-store would break SSE reconnection
             $sseCache = $this->resolveConfigValue($config, 'cache_control', 'no-cache');
             if ($sseCache !== false) {

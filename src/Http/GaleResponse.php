@@ -611,6 +611,17 @@ class GaleResponse implements Responsable
     {
         $this->extraHeaders = array_merge($this->extraHeaders, $headers);
 
+        // F-037: When the developer explicitly sets Cache-Control via withHeaders(),
+        // mark it so the security headers middleware (F-022) won't override it.
+        // This enables controllers to set Cache-Control: max-age=N for client-side
+        // response caching (BR-037.5) without the security middleware overwriting it.
+        foreach ($headers as $name => $value) {
+            if (strcasecmp($name, 'Cache-Control') === 0) {
+                $this->extraHeaders['X-Gale-Developer-Cache-Control'] = 'true';
+                break;
+            }
+        }
+
         return $this;
     }
 
