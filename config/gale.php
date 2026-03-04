@@ -20,6 +20,7 @@ return [
     | │ mode                        │ string   │ 'http'                       │ 'http', 'sse'                   │
     | │ morph_markers               │ bool     │ true                         │ true, false                     │
     | │ debug                       │ bool     │ false                        │ true, false                     │
+    | │ etag                        │ bool     │ false                        │ true, false                     │
     | │ sanitize_html               │ bool     │ true                         │ true, false                     │
     | │ allow_scripts               │ bool     │ false                        │ true, false                     │
     | │ csp_nonce                   │ ?string  │ null                         │ null, 'auto', non-empty string  │
@@ -35,7 +36,7 @@ return [
     | └─────────────────────────────┴──────────┴──────────────────────────────┴─────────────────────────────────┘
     |
     | Environment variables: GALE_MODE, GALE_MORPH_MARKERS, GALE_DEBUG,
-    | GALE_SANITIZE_HTML, GALE_ALLOW_SCRIPTS, GALE_CSP_NONCE
+    | GALE_ETAG, GALE_SANITIZE_HTML, GALE_ALLOW_SCRIPTS, GALE_CSP_NONCE
     |
     */
 
@@ -163,6 +164,30 @@ return [
     */
 
     'debug' => env('GALE_DEBUG', false),
+
+    /*
+    |--------------------------------------------------------------------------
+    | ETag Conditional Responses (F-027)
+    |--------------------------------------------------------------------------
+    |
+    | When enabled globally, all HTTP-mode Gale responses include an ETag
+    | header based on a hash of the response content. On subsequent requests,
+    | the frontend sends If-None-Match with the cached ETag. If the response
+    | content has not changed, the server returns 304 Not Modified with an
+    | empty body, saving bandwidth.
+    |
+    | This is opt-in because non-idempotent endpoints with side effects
+    | should not serve 304 responses. For granular control, use the
+    | per-endpoint gale()->etag() method instead of enabling globally.
+    |
+    | ETag is NEVER applied to SSE streaming responses regardless of this
+    | setting (BR-F027-10).
+    |
+    | Type: boolean | Default: false | Env: GALE_ETAG
+    |
+    */
+
+    'etag' => env('GALE_ETAG', false),
 
     /*
     |--------------------------------------------------------------------------

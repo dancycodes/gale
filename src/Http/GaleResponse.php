@@ -2369,11 +2369,14 @@ class GaleResponse implements Responsable
 
             if ($mode === 'http') {
                 // HTTP mode: return JsonResponse with serialized events (BR-004.1, BR-004.6)
-                // Cache-Control: no-store prevents browsers from caching JSON responses that
-                // could be served for regular browser navigation (back button, idle reload).
+                //
+                // BR-F027-04: State patches use 'no-cache' — the browser always revalidates
+                // before serving a cached copy. This enables ETag conditional requests (304)
+                // when etag() is enabled, and is harmless without ETag (browser revalidates
+                // but has no cached copy to serve).
                 $responseHeaders = array_merge([
                     'X-Gale-Response' => 'true',
-                    'Cache-Control' => 'no-store',
+                    'Cache-Control' => 'no-cache',
                     'Vary' => 'Gale-Request',
                 ], $extraHeaders);
 
