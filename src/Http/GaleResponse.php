@@ -1994,6 +1994,56 @@ class GaleResponse implements Responsable
     }
 
     /**
+     * Intercept stray echo/print output from the buffer during streaming (BR-F009-02)
+     *
+     * Called before each SSE event is sent in streaming mode. Checks the output buffer
+     * for any non-SSE content produced by direct echo/print calls in the stream callback.
+     * If found, the stray output is drained and validated: in debug mode an exception is
+     * thrown (BR-F009-03), in production a gale-error event is emitted (BR-F009-04).
+     *
+     * This provides per-event inline validation rather than post-hoc checking, preventing
+     * invalid content from leaking into the SSE stream between valid events.
+     *
+     * After intercepting, the output buffer is closed so that the caller can echo SSE
+     * content directly to the client. The caller is responsible for re-opening the buffer.
+     *
+     * @throws \InvalidArgumentException When non-SSE output is captured in debug mode
+     *
+     * @return bool Whether a validation buffer was active (caller should re-open if true)
+     */
+    protected function interceptStrayBufferOutput(): bool
+    {
+        if (ob_get_level() === 0) {
+            return false;
+        }
+
+        $buffered = ob_get_contents();
+
+        // Close the validation buffer — caller will echo SSE content directly
+        ob_end_clean();
+
+        if ($buffered === false || $buffered === '') {
+            return true;
+        }
+
+        // HTML output (dd/dump) gets the full-page replacement treatment via
+        // handleStreamOutput() in the finally block. Re-echo it so that handler
+        // can pick it up, then let the exception propagate or continue normally.
+        if ($this->looksLikeHtml($buffered)) {
+            // Re-open a temporary buffer so the HTML doesn't go to the client yet
+            ob_start();
+            echo $buffered;
+
+            return true;
+        }
+
+        // Non-HTML, non-SSE output — validate (throws in debug, emits gale-error in prod)
+        $this->validateStreamOutput($buffered);
+
+        return true;
+    }
+
+    /**
      * Override Laravel redirect helper for streaming mode
      *
      * Binds GaleStreamRedirector which extends Laravel's Redirector to intercept
@@ -2598,9 +2648,22 @@ class GaleResponse implements Responsable
      */
     protected function sendEventImmediately(string $eventType, array $dataLines): void
     {
+        // BR-F009-02: Check for stray echo/print output in the buffer before sending
+        // the next SSE event. This catches non-SSE output inline (per-event) rather than
+        // post-hoc, preventing invalid content from leaking into the SSE stream.
+        // The interceptor also manages the buffer lifecycle: it closes the current
+        // validation buffer so the SSE event can be echoed directly to the client,
+        // then re-opens a fresh buffer for capturing subsequent stray output.
+        $hadValidationBuffer = $this->interceptStrayBufferOutput();
+
         $output = $this->formatEvent($eventType, $dataLines);
         echo $output;
         $this->flushOutput();
+
+        // Re-establish the validation buffer so the next echo/print is captured
+        if ($hadValidationBuffer) {
+            ob_start();
+        }
     }
 
     /**
