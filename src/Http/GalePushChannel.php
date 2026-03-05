@@ -140,12 +140,19 @@ class GalePushChannel
         }
 
         $cacheKey = self::CACHE_KEY_PREFIX . $this->channelName;
+        $lock = Cache::lock($cacheKey . '_lock', 5);
 
-        // Atomic append to channel queue
-        /** @var array<int, string> $existing */
-        $existing = Cache::get($cacheKey, []);
-        $existing = array_merge($existing, $this->events);
-        Cache::put($cacheKey, $existing, self::CACHE_TTL);
+        // Use lock to prevent race with concurrent drain() or send() calls
+        $lock->block(3);
+
+        try {
+            /** @var array<int, string> $existing */
+            $existing = Cache::get($cacheKey, []);
+            $existing = array_merge($existing, $this->events);
+            Cache::put($cacheKey, $existing, self::CACHE_TTL);
+        } finally {
+            $lock->release();
+        }
 
         // Clear queued events after sending
         $this->events = [];
@@ -165,14 +172,28 @@ class GalePushChannel
     {
         $cacheKey = self::CACHE_KEY_PREFIX . $channelName;
 
-        /** @var array<int, string> $events */
-        $events = Cache::get($cacheKey, []);
+        // Use a cache lock to prevent concurrent drains from reading the same events.
+        // This prevents duplicate delivery when multiple stream endpoints poll
+        // the same channel or when the file cache driver has race conditions.
+        $lock = Cache::lock($cacheKey . '_lock', 5);
 
-        if (!empty($events)) {
-            Cache::put($cacheKey, [], self::CACHE_TTL);
+        if (!$lock->get()) {
+            // Another drain is in progress — return empty to avoid duplicates
+            return [];
         }
 
-        return $events;
+        try {
+            /** @var array<int, string> $events */
+            $events = Cache::get($cacheKey, []);
+
+            if (!empty($events)) {
+                Cache::put($cacheKey, [], self::CACHE_TTL);
+            }
+
+            return $events;
+        } finally {
+            $lock->release();
+        }
     }
 
     /**
