@@ -2078,11 +2078,20 @@ class GaleResponse implements Responsable
             return true;
         }
 
-        // HTML output (dd/dump) gets the full-page replacement treatment via
-        // handleStreamOutput() in the finally block. Re-echo it so that handler
-        // can pick it up, then let the exception propagate or continue normally.
         if ($this->looksLikeHtml($buffered)) {
-            // Re-open a temporary buffer so the HTML doesn't go to the client yet
+            // F-057: VarDumper output (dump() calls mid-stream) in debug mode is sent
+            // immediately as a gale-debug-dump SSE event. This keeps the page intact
+            // and lets the developer see dump output in the overlay while the stream
+            // continues processing subsequent events (BR-057.1, BR-057.5).
+            if (config('gale.debug', false) && $this->looksLikeVarDumper($buffered)) {
+                $this->sendVarDumperAsDebugEvent($buffered);
+
+                return true;
+            }
+
+            // Non-VarDumper HTML (Ignition, etc.) gets the full-page replacement
+            // treatment via handleStreamOutput() in the finally block. Re-echo it
+            // so that handler can pick it up.
             ob_start();
             echo $buffered;
 
@@ -2121,6 +2130,11 @@ class GaleResponse implements Responsable
      * which calls exit(). The shutdown function runs after script termination,
      * allowing us to capture and send the native Laravel dd() output via SSE.
      *
+     * When config('gale.debug') is true and the output is VarDumper HTML (sf-dump),
+     * it is sent as a gale-debug-dump SSE event so the frontend debug overlay
+     * renders it without replacing the page (F-057, BR-057.5). Otherwise, falls
+     * back to full document replacement for Ignition error pages and other HTML.
+     *
      * Note: This is public because it's called via register_shutdown_function()
      */
     public function handleShutdownOutput(): void
@@ -2131,17 +2145,23 @@ class GaleResponse implements Responsable
             $output = ob_get_clean() . $output;
         }
 
-        // If there's output, wrap it and send to replace the document
-        if (!empty(trim($output))) {
-            $html = $this->wrapOutputAsHtml($output);
-
-            // Send via SSE to replace document (trusted Laravel backend content)
-            echo "event: gale-patch-elements\n";
-            echo 'data: elements <script>document.open(); document.write(' . json_encode($html) . "); document.close();</script>\n";
-            echo "data: selector body\n";
-            echo "data: mode append\n\n";
-            flush();
+        if (empty(trim($output))) {
+            return;
         }
+
+        // F-057: When debug mode is on and output is VarDumper HTML, send as
+        // gale-debug-dump event so the frontend overlay renders it inline
+        // instead of replacing the entire page (BR-057.5).
+        if (config('gale.debug', false) && $this->looksLikeVarDumper($output)) {
+            $this->sendVarDumperAsDebugEvent($output);
+
+            return;
+        }
+
+        // Fallback: full document replacement for non-VarDumper HTML (Ignition, etc.)
+        // This uses document replacement which is trusted Laravel backend content
+        $html = $this->wrapOutputAsHtml($output);
+        $this->emitDocumentReplacementEvent($html);
     }
 
     /**
@@ -2153,6 +2173,65 @@ class GaleResponse implements Responsable
         return preg_match('/<[a-z][\s\S]*>/i', $content) === 1
             || strpos($content, 'sf-dump') !== false
             || strpos($content, '<!DOCTYPE') !== false;
+    }
+
+    /**
+     * Check if content looks like Symfony VarDumper HTML output (F-057)
+     *
+     * VarDumper HTML output contains the `sf-dump` CSS class and/or the
+     * `Sfdump` JavaScript initialization function. This distinguishes
+     * dd()/dump() output from other HTML like Ignition error pages.
+     */
+    private function looksLikeVarDumper(string $content): bool
+    {
+        return strpos($content, 'sf-dump') !== false
+            || strpos($content, 'Sfdump') !== false;
+    }
+
+    /**
+     * Send VarDumper HTML as a gale-debug-dump SSE event (F-057)
+     *
+     * Emits the captured VarDumper HTML directly as a gale-debug-dump SSE event,
+     * base64-encoding it to avoid SSE line-break issues. The frontend renders
+     * this in the dismissible debug overlay instead of replacing the page.
+     *
+     * The 1MB truncation limit prevents oversized dumps from overwhelming
+     * the SSE stream or the frontend overlay.
+     *
+     * @param string $html Raw VarDumper HTML from output buffer capture
+     */
+    private function sendVarDumperAsDebugEvent(string $html): void
+    {
+        // Truncate oversized dumps to prevent SSE stream issues
+        $maxSize = 1_048_576; // 1MB
+        if (strlen($html) > $maxSize) {
+            $html = substr($html, 0, $maxSize)
+                . '<p style="color:orange;font-weight:bold;">[... output truncated — exceeded 1MB limit ...]</p>';
+        }
+
+        $encoded = base64_encode($html);
+
+        echo "event: gale-debug-dump\n";
+        echo "data: html {$encoded}\n\n";
+        flush();
+    }
+
+    /**
+     * Emit a full document replacement SSE event
+     *
+     * Sends JavaScript to replace the complete browser document content.
+     * Used for Ignition error pages and other non-VarDumper HTML output
+     * in SSE streaming mode. The content is trusted Laravel backend output.
+     *
+     * @param string $html Complete HTML document to display
+     */
+    private function emitDocumentReplacementEvent(string $html): void
+    {
+        echo "event: gale-patch-elements\n";
+        echo 'data: elements <script>document.open(); document.write(' . json_encode($html) . "); document.close();</script>\n";
+        echo "data: selector body\n";
+        echo "data: mode append\n\n";
+        flush();
     }
 
     /**
@@ -2201,11 +2280,11 @@ class GaleResponse implements Responsable
     /**
      * Process output buffer and replace document if content exists
      *
-     * Captures buffered output from the streaming callback. HTML output (like Laravel's
-     * native dd/dump) is displayed in the browser via document replacement. Plain text
-     * that is not valid SSE format triggers stream validation (throws in debug,
-     * emits gale-error in production). Valid SSE output is passed through as-is.
-     * Terminates stream after document replacement.
+     * Captures buffered output from the streaming callback. When gale.debug is true
+     * and the output is VarDumper HTML (dd/dump), it is sent as a gale-debug-dump
+     * SSE event to the frontend debug overlay (F-057, BR-057.5). Other HTML output
+     * (Ignition error pages) triggers full document replacement (BR-F009-02).
+     * Plain text that is not valid SSE triggers stream validation.
      */
     protected function handleStreamOutput(): void
     {
@@ -2219,9 +2298,15 @@ class GaleResponse implements Responsable
             return;
         }
 
-        // HTML output (e.g. dd(), dump(), Ignition error pages) is forwarded to the browser
-        // as a full-page document replacement — this is intentional dd/dump behavior (BR-F009-02)
         if ($this->looksLikeHtml($output)) {
+            // F-057: VarDumper output in debug mode goes to the overlay, not page replacement
+            if (config('gale.debug', false) && $this->looksLikeVarDumper($output)) {
+                $this->sendVarDumperAsDebugEvent($output);
+
+                return;
+            }
+
+            // Non-VarDumper HTML (Ignition error pages) — full document replacement (BR-F009-02)
             $html = $this->wrapOutputAsHtml($output);
             $this->replaceDocumentAndExit($html);
 
