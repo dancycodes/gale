@@ -1587,18 +1587,13 @@ class GaleResponse implements Responsable
         // Priority: $options['nonce'] > config('gale.csp_nonce') > null
         $nonceRaw = $options['nonce'] ?? config('gale.csp_nonce', null);
         $nonce = is_string($nonceRaw) ? $nonceRaw : null;
-        if ($nonce !== null) {
-            // Pass nonce as an attribute so SSE mode script tags also receive it
-            $existingAttributesRaw = $options['attributes'] ?? null;
-            $existingAttributes = is_array($existingAttributesRaw) ? $existingAttributesRaw : [];
-            $options['attributes'] = array_merge($existingAttributes, ['nonce' => $nonce]);
-        }
 
-        $dataLines = $this->buildScriptEvent($script, $options);
-
-        // Build structured data for JSON serialization (acceptance criteria #6)
-        // Script execution events use the gale-execute-script type in JSON format
-        // to distinguish from regular element patches
+        // Build structured data used for BOTH JSON and SSE modes.
+        // F-018: Using a dedicated gale-execute-script event type instead of
+        // gale-patch-elements with a <script> tag. This prevents the XSS
+        // sanitizer (F-014) from stripping the script content in SSE mode,
+        // since gale-execute-script bypasses DOM sanitization entirely
+        // (the script comes from the trusted server backend).
         $structuredData = array_filter([
             'script' => $script,
             'nonce' => $nonce,
@@ -1608,11 +1603,14 @@ class GaleResponse implements Responsable
             ], fn ($v) => $v !== null),
         ], fn ($v) => $v !== null);
 
-        // Use gale-execute-script type for JSON (distinct from gale-patch-elements)
-        // While SSE reuses gale-patch-elements with a script tag, JSON mode uses a
-        // dedicated event type for cleaner client-side processing
+        // JSON mode: gale-execute-script event in the events array
         $this->addJsonEvent('gale-execute-script', $structuredData);
-        $this->handleEvent('gale-patch-elements', $dataLines);
+
+        // SSE mode: gale-execute-script event with key-value data lines.
+        // This replaces the old gale-patch-elements approach which was
+        // incompatible with the XSS sanitizer (F-014, BR-018.7).
+        $sseDataLines = $this->buildExecuteScriptSseEvent($script, $nonce, $options);
+        $this->handleEvent('gale-execute-script', $sseDataLines);
 
         return $this;
     }
@@ -3095,6 +3093,51 @@ class GaleResponse implements Responsable
         $scriptLines = explode("\n", trim($scriptTag));
         foreach ($scriptLines as $line) {
             $dataLines[] = "elements {$line}";
+        }
+
+        return $dataLines;
+    }
+
+    /**
+     * Build SSE data lines for a dedicated gale-execute-script event (F-018)
+     *
+     * Creates key-value formatted SSE data lines for the gale-execute-script event type.
+     * Unlike the legacy buildScriptEvent() which embedded a <script> tag inside a
+     * gale-patch-elements event (incompatible with F-014 XSS sanitizer), this method
+     * sends the script code and nonce as structured data that the frontend handles
+     * via json-processor.js executeScript() — the same code path used in HTTP mode.
+     *
+     * SSE format:
+     *   event: gale-execute-script
+     *   data: script <JS code>
+     *   data: nonce <value>           (optional — only when nonce is provided)
+     *   data: autoRemove true|false   (optional — defaults to true on frontend)
+     *
+     * @param string $script JavaScript code to execute
+     * @param string|null $nonce CSP nonce value (null = no nonce)
+     * @param array<string, mixed> $options Script options (autoRemove, attributes)
+     *
+     * @return array<int, string> Array of SSE data lines
+     */
+    protected function buildExecuteScriptSseEvent(string $script, ?string $nonce, array $options): array
+    {
+        $dataLines = [];
+
+        // Script code — may span multiple lines, each prefixed with "script "
+        $scriptLines = explode("\n", $script);
+        foreach ($scriptLines as $line) {
+            $dataLines[] = "script {$line}";
+        }
+
+        // CSP nonce (BR-018.4)
+        if ($nonce !== null && $nonce !== '') {
+            $dataLines[] = "nonce {$nonce}";
+        }
+
+        // Auto-remove setting (defaults to true on the frontend)
+        $autoRemove = $options['autoRemove'] ?? true;
+        if (!$autoRemove) {
+            $dataLines[] = 'autoRemove false';
         }
 
         return $dataLines;
