@@ -115,10 +115,12 @@ describe('GaleRedirect HTTP mode output', function () {
         expect($response)->toBeInstanceOf(JsonResponse::class);
     });
 
-    it('includes window.location.href in the event data', function () {
+    it('includes the gale-redirect event with the target URL', function () {
         $response = makeRedirect('/dashboard')->toResponse(request());
 
-        expect(anyEventContains($response, 'window.location'))->toBeTrue();
+        // F-012: GaleRedirect uses emitRedirect() which emits a gale-redirect event (not window.location JS)
+        expect(anyEventContains($response, 'gale-redirect'))->toBeTrue();
+        expect(anyEventContains($response, '/dashboard'))->toBeTrue();
     });
 
     it('includes the target URL in the response', function () {
@@ -141,7 +143,9 @@ describe('GaleRedirect HTTP mode output', function () {
 
         // Should not contain unescaped < or > which would be XSS vectors
         expect($response->getContent())->not->toContain('<script>');
-        expect(anyEventContains($response, 'window.location'))->toBeTrue();
+        // F-012: emitRedirect emits gale-redirect event with the URL
+        expect(anyEventContains($response, 'gale-redirect'))->toBeTrue();
+        expect(anyEventContains($response, '/search'))->toBeTrue();
     });
 });
 
@@ -169,8 +173,8 @@ describe('GaleRedirect redirect types', function () {
     it('home() redirects to root URL', function () {
         $response = makeRedirect(null)->home()->toResponse(request());
 
-        // home() calls url('/') which generates an absolute URL containing the root
-        expect(anyEventContains($response, 'window.location'))->toBeTrue();
+        // home() calls url('/') — the gale-redirect event contains the URL
+        expect(anyEventContains($response, 'gale-redirect'))->toBeTrue();
     });
 
     it('back() falls back to provided fallback when no previous URL', function () {
@@ -231,7 +235,8 @@ describe('GaleRedirect redirect types', function () {
     it('refresh() uses current request URL', function () {
         $response = makeRedirect(null)->refresh()->toResponse(request());
 
-        expect(anyEventContains($response, 'window.location'))->toBeTrue();
+        // refresh() sets the URL to the current request URL, emits a gale-redirect event
+        expect(anyEventContains($response, 'gale-redirect'))->toBeTrue();
     });
 });
 

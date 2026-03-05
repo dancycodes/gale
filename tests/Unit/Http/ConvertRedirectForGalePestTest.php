@@ -94,7 +94,7 @@ describe('ConvertRedirectForGale — Gale request with RedirectResponse', functi
         expect($content)->toContain('target-page');
     });
 
-    it('contains window.location in the converted response (JS navigation)', function () {
+    it('contains gale-redirect event with the target URL in the converted response', function () {
         $request = makeGaleHttpRequestForMiddleware();
         app()->instance('request', $request);
         request()->headers->set('Gale-Request', 'true');
@@ -110,7 +110,9 @@ describe('ConvertRedirectForGale — Gale request with RedirectResponse', functi
             $content = ob_get_clean() ?: '';
         }
 
-        expect($content)->toContain('window.location');
+        // F-012: emitRedirect() emits gale-redirect event, not window.location JS
+        expect($content)->toContain('gale-redirect');
+        expect($content)->toContain('go-here');
     });
 });
 
