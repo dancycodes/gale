@@ -65,6 +65,30 @@ class GaleResponse implements Responsable
      */
     protected static array $afterHooks = [];
 
+    /**
+     * Register a custom macro on GaleResponse (BR-F064-01, BR-F064-04)
+     *
+     * Overrides the Macroable::macro() method with a conflict check that prevents
+     * macros from shadowing existing GaleResponse methods. While PHP would resolve
+     * real methods before __call anyway, throwing early gives developers a clear
+     * error at registration time rather than silently ignoring the macro.
+     *
+     * @param string $name The macro method name
+     * @param object|callable $macro The macro callable (receives $this via Closure binding)
+     *
+     * @throws \RuntimeException When $name conflicts with an existing method on GaleResponse
+     */
+    public static function macro($name, $macro): void
+    {
+        if (method_exists(static::class, $name)) {
+            throw new \RuntimeException(
+                "Cannot register macro [{$name}]: it conflicts with an existing GaleResponse method."
+            );
+        }
+
+        static::$macros[$name] = $macro;
+    }
+
     /** @var array<int, string> SSE-formatted event strings */
     protected array $events = [];
 
