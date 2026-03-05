@@ -203,14 +203,13 @@ class GaleRedirect implements Responsable
             }
         }
 
-        $safeUrl = json_encode($this->url, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
-
-        // Direct navigation - no setTimeout needed since frontend handles response properly
-        $script = "window.location.href = {$safeUrl}";
-
+        // F-012: Use dedicated gale-redirect event instead of gale-execute-script/gale-patch-elements.
+        // The previous approach used js() which emits gale-patch-elements with a <script> tag
+        // in SSE mode — the XSS sanitizer (F-014) strips <script> tags, breaking SSE redirects.
+        // emitRedirect() emits a native gale-redirect event that bypasses sanitization entirely.
         /** @var \Symfony\Component\HttpFoundation\Response $response */
         $response = $this->galeResponse
-            ->js($script, ['autoRemove' => true])
+            ->emitRedirect($this->url)
             ->toResponse($request);
 
         return $response;

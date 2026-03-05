@@ -1618,6 +1618,34 @@ class GaleResponse implements Responsable
     }
 
     /**
+     * Emit a gale-redirect event for both HTTP (JSON) and SSE modes (F-012)
+     *
+     * Unlike executeScript() which emits gale-patch-elements with a <script> tag for SSE
+     * (which gets stripped by the XSS sanitizer), this method emits a dedicated gale-redirect
+     * event type that the frontend handles natively without passing through sanitization.
+     *
+     * In JSON mode: adds a gale-redirect event to the events array.
+     * In SSE mode: sends a gale-redirect event with URL data.
+     *
+     * The frontend validates the URL against the redirect security policy (F-020) before
+     * performing the navigation.
+     *
+     * @param string $url The validated redirect URL
+     *
+     * @return static Returns this instance for method chaining
+     */
+    public function emitRedirect(string $url): self
+    {
+        $structuredData = ['url' => $url];
+        $dataLines = ['url ' . $url];
+
+        $this->addJsonEvent('gale-redirect', $structuredData);
+        $this->handleEvent('gale-redirect', $dataLines);
+
+        return $this;
+    }
+
+    /**
      * Remove matched elements from the DOM
      *
      * Constructs and handles a gale-patch-elements event with mode 'remove'.
