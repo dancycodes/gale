@@ -11,7 +11,6 @@ reactive page — a working counter that updates without a page reload. Estimate
 
 - PHP 8.2 or higher
 - Laravel 11 or 12
-- Node.js + npm (for the Alpine Gale JS package)
 
 > **Note:** `@gale` replaces any existing Alpine.js CDN script. Do not load Alpine separately
 > alongside `@gale` — it is already bundled.
@@ -28,19 +27,17 @@ composer require dancycodes/gale
 
 ### Step 2 — Run the Gale installer
 
-The installer publishes assets (the Alpine Gale JS bundle) to your `public/` folder and
-publishes the config file so you can customize Gale's behavior.
+The installer publishes the Alpine Gale JS bundle to your `public/vendor/gale/` folder.
 
 ```bash
 php artisan gale:install
 ```
 
-> **Tip:** If you prefer to run the steps separately:
->
-> ```bash
-> php artisan vendor:publish --tag=gale-assets --force
-> php artisan vendor:publish --tag=gale-config
-> ```
+To also publish the config file (optional — Gale works with sensible defaults):
+
+```bash
+php artisan vendor:publish --tag=gale-config
+```
 
 ### Step 3 — Add `@gale` to your layout
 
@@ -71,12 +68,16 @@ includes Alpine already.
 
 That is all the setup needed. No `npm install`, no build step.
 
+> **Advanced (Vite/ES modules):** If you use a bundler, install via npm instead:
+> `npm install alpine-gale alpinejs`, then `import Gale from 'alpine-gale'` and
+> `Alpine.plugin(Gale)` in your `app.js`. See [Frontend API Reference](frontend-api.md).
+
 ---
 
 ## Configuration
 
-Publishing the config file (done by `gale:install`) creates `config/gale.php`. The most
-commonly adjusted options are:
+If you published the config file, it lives at `config/gale.php`. The most commonly
+adjusted options are:
 
 ```php
 // config/gale.php
@@ -137,7 +138,7 @@ class CounterController extends Controller
     {
         $count = $request->state('count', 0) + 1;
 
-        return gale()->patchState(['count' => $count]);
+        return gale()->state(['count' => $count]);
     }
 }
 ```
@@ -149,7 +150,7 @@ class CounterController extends Controller
   the page fragment. The `web: true` argument is what enables this dual behavior.
 
 - `increment()` — Reads the current `count` from the request state (the Alpine `x-data`
-  value the browser sent), adds one, and returns `gale()->patchState()` to push the new
+  value the browser sent), adds one, and returns `gale()->state()` to push the new
   value back to Alpine.
 
 ### Step 2 — Create the Blade view
@@ -220,7 +221,7 @@ On each button click, Gale completes this round-trip without a page reload:
    `Gale-Request: true` header and body `{ "count": 0 }` (the current `x-data` state
    via `x-sync`).
 2. **Controller** — `$request->state('count')` reads `0` from the JSON body. The
-   controller returns `gale()->patchState(['count' => 1])`.
+   controller returns `gale()->state(['count' => 1])`.
 3. **Response (HTTP mode)** — Gale sends `{ "events": [{ "type": "gale-patch-state",
    "data": { "count": 1 } }] }` as `application/json`.
 4. **Browser** — Alpine Gale merges `{ "count": 1 }` into `x-data` via RFC 7386 JSON
@@ -256,14 +257,13 @@ Remove any `<script src="...alpinejs...">` or `<script defer src="cdn.jsdelivr.n
 
 | Method | Signature | Example |
 |--------|-----------|---------|
-| `view()` | `view(string $view, array $data = [], bool $web = false)` | `gale()->view('home', ['title' => 'Home'], web: true)` |
-| `patchState()` | `patchState(array $state)` | `gale()->patchState(['count' => 5])` |
-| `state()` | `state(string $key, mixed $value)` | `gale()->state('user', $user->toArray())` |
-| `fragment()` | `fragment(string $view, string $name, array $data = [])` | `gale()->fragment('posts.index', 'list', compact('posts'))` |
+| `view()` | `view(string $view, array $data = [], array $options = [], bool $web = false)` | `gale()->view('home', ['title' => 'Home'], web: true)` |
+| `state()` | `state(string\|array $key, mixed $value = null)` | `gale()->state(['count' => 5])` or `gale()->state('user', $user)` |
+| `fragment()` | `fragment(string $view, string $fragment, array $data = [])` | `gale()->fragment('posts.index', 'list', compact('posts'))` |
 | `messages()` | `messages(array $messages)` | `gale()->messages(['email' => 'Required'])` |
-| `redirect()` | `redirect(string $url)` | `gale()->redirect('/dashboard')->with('status', 'Saved')` |
-| `download()` | `download(string $path, ?string $name = null)` | `gale()->download(storage_path('file.pdf'))` |
-| `stream()` | `stream(Closure $callback)` | `gale()->stream(fn($g) => $g->patchState(['done' => true]))` |
+| `redirect()` | `redirect(?string $url = null)` | `gale()->redirect('/dashboard')->with('status', 'Saved')` |
+| `download()` | `download(string $pathOrContent, string $filename)` | `gale()->download(storage_path('file.pdf'), 'report.pdf')` |
+| `stream()` | `stream(Closure $callback)` | `gale()->stream(fn($g) => $g->state(['done' => true]))` |
 | `debug()` | `debug(mixed $labelOrData, mixed $data = null)` | `gale()->debug('payload', $request->all())` |
 | `dispatch()` | `dispatch(string $event, array $data = [])` | `gale()->dispatch('toast', ['message' => 'Saved!'])` |
 

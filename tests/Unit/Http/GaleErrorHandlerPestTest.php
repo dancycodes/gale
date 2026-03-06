@@ -145,7 +145,7 @@ describe('GaleErrorHandler::handle() — 401 redirects to login', function () {
         expect($result)->not->toBeNull();
     });
 
-    it('contains window.location in the response for 401 (redirect to login)', function () {
+    it('contains gale-redirect event in the response for 401 (redirect to login)', function () {
         app()->instance('request', makeGaleRequest());
         request()->headers->set('Gale-Request', 'true');
 
@@ -156,7 +156,8 @@ describe('GaleErrorHandler::handle() — 401 redirects to login', function () {
 
         expect($result)->not->toBeNull();
         $content = getResponseContent($result);
-        expect($content)->toContain('window.location');
+        // F-012: emitRedirect() emits gale-redirect event, not window.location JS
+        expect($content)->toContain('gale-redirect');
     });
 
     it('uses the login_url from config for 401 redirect', function () {

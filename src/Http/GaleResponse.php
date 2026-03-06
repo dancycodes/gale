@@ -65,6 +65,30 @@ class GaleResponse implements Responsable
      */
     protected static array $afterHooks = [];
 
+    /**
+     * Register a custom macro on GaleResponse (BR-F064-01, BR-F064-04)
+     *
+     * Overrides the Macroable::macro() method with a conflict check that prevents
+     * macros from shadowing existing GaleResponse methods. While PHP would resolve
+     * real methods before __call anyway, throwing early gives developers a clear
+     * error at registration time rather than silently ignoring the macro.
+     *
+     * @param string $name The macro method name
+     * @param object|callable $macro The macro callable (receives $this via Closure binding)
+     *
+     * @throws \RuntimeException When $name conflicts with an existing method on GaleResponse
+     */
+    public static function macro($name, $macro): void
+    {
+        if (method_exists(static::class, $name)) {
+            throw new \RuntimeException(
+                "Cannot register macro [{$name}]: it conflicts with an existing GaleResponse method."
+            );
+        }
+
+        static::$macros[$name] = $macro;
+    }
+
     /** @var array<int, string> SSE-formatted event strings */
     protected array $events = [];
 
@@ -611,6 +635,17 @@ class GaleResponse implements Responsable
     {
         $this->extraHeaders = array_merge($this->extraHeaders, $headers);
 
+        // F-037: When the developer explicitly sets Cache-Control via withHeaders(),
+        // mark it so the security headers middleware (F-022) won't override it.
+        // This enables controllers to set Cache-Control: max-age=N for client-side
+        // response caching (BR-037.5) without the security middleware overwriting it.
+        foreach ($headers as $name => $value) {
+            if (strcasecmp($name, 'Cache-Control') === 0) {
+                $this->extraHeaders['X-Gale-Developer-Cache-Control'] = 'true';
+                break;
+            }
+        }
+
         return $this;
     }
 
@@ -631,6 +666,9 @@ class GaleResponse implements Responsable
             'Content-Type' => 'text/event-stream',
             'X-Accel-Buffering' => 'no',
             'X-Gale-Response' => 'true',
+            // Vary on Gale-Request so browsers/CDNs never serve cached Gale JSON
+            // for a regular browser navigation (back button, idle reload, bfcache).
+            'Vary' => 'Gale-Request',
         ];
 
         $protocol = $_SERVER['SERVER_PROTOCOL'] ?? '';
@@ -1549,18 +1587,13 @@ class GaleResponse implements Responsable
         // Priority: $options['nonce'] > config('gale.csp_nonce') > null
         $nonceRaw = $options['nonce'] ?? config('gale.csp_nonce', null);
         $nonce = is_string($nonceRaw) ? $nonceRaw : null;
-        if ($nonce !== null) {
-            // Pass nonce as an attribute so SSE mode script tags also receive it
-            $existingAttributesRaw = $options['attributes'] ?? null;
-            $existingAttributes = is_array($existingAttributesRaw) ? $existingAttributesRaw : [];
-            $options['attributes'] = array_merge($existingAttributes, ['nonce' => $nonce]);
-        }
 
-        $dataLines = $this->buildScriptEvent($script, $options);
-
-        // Build structured data for JSON serialization (acceptance criteria #6)
-        // Script execution events use the gale-execute-script type in JSON format
-        // to distinguish from regular element patches
+        // Build structured data used for BOTH JSON and SSE modes.
+        // F-018: Using a dedicated gale-execute-script event type instead of
+        // gale-patch-elements with a <script> tag. This prevents the XSS
+        // sanitizer (F-014) from stripping the script content in SSE mode,
+        // since gale-execute-script bypasses DOM sanitization entirely
+        // (the script comes from the trusted server backend).
         $structuredData = array_filter([
             'script' => $script,
             'nonce' => $nonce,
@@ -1570,11 +1603,42 @@ class GaleResponse implements Responsable
             ], fn ($v) => $v !== null),
         ], fn ($v) => $v !== null);
 
-        // Use gale-execute-script type for JSON (distinct from gale-patch-elements)
-        // While SSE reuses gale-patch-elements with a script tag, JSON mode uses a
-        // dedicated event type for cleaner client-side processing
+        // JSON mode: gale-execute-script event in the events array
         $this->addJsonEvent('gale-execute-script', $structuredData);
-        $this->handleEvent('gale-patch-elements', $dataLines);
+
+        // SSE mode: gale-execute-script event with key-value data lines.
+        // This replaces the old gale-patch-elements approach which was
+        // incompatible with the XSS sanitizer (F-014, BR-018.7).
+        $sseDataLines = $this->buildExecuteScriptSseEvent($script, $nonce, $options);
+        $this->handleEvent('gale-execute-script', $sseDataLines);
+
+        return $this;
+    }
+
+    /**
+     * Emit a gale-redirect event for both HTTP (JSON) and SSE modes (F-012)
+     *
+     * Unlike executeScript() which emits gale-patch-elements with a <script> tag for SSE
+     * (which gets stripped by the XSS sanitizer), this method emits a dedicated gale-redirect
+     * event type that the frontend handles natively without passing through sanitization.
+     *
+     * In JSON mode: adds a gale-redirect event to the events array.
+     * In SSE mode: sends a gale-redirect event with URL data.
+     *
+     * The frontend validates the URL against the redirect security policy (F-020) before
+     * performing the navigation.
+     *
+     * @param string $url The validated redirect URL
+     *
+     * @return static Returns this instance for method chaining
+     */
+    public function emitRedirect(string $url): self
+    {
+        $structuredData = ['url' => $url];
+        $dataLines = ['url ' . $url];
+
+        $this->addJsonEvent('gale-redirect', $structuredData);
+        $this->handleEvent('gale-redirect', $dataLines);
 
         return $this;
     }
@@ -1980,6 +2044,65 @@ class GaleResponse implements Responsable
     }
 
     /**
+     * Intercept stray echo/print output from the buffer during streaming (BR-F009-02)
+     *
+     * Called before each SSE event is sent in streaming mode. Checks the output buffer
+     * for any non-SSE content produced by direct echo/print calls in the stream callback.
+     * If found, the stray output is drained and validated: in debug mode an exception is
+     * thrown (BR-F009-03), in production a gale-error event is emitted (BR-F009-04).
+     *
+     * This provides per-event inline validation rather than post-hoc checking, preventing
+     * invalid content from leaking into the SSE stream between valid events.
+     *
+     * After intercepting, the output buffer is closed so that the caller can echo SSE
+     * content directly to the client. The caller is responsible for re-opening the buffer.
+     *
+     * @throws \InvalidArgumentException When non-SSE output is captured in debug mode
+     *
+     * @return bool Whether a validation buffer was active (caller should re-open if true)
+     */
+    protected function interceptStrayBufferOutput(): bool
+    {
+        if (ob_get_level() === 0) {
+            return false;
+        }
+
+        $buffered = ob_get_contents();
+
+        // Close the validation buffer — caller will echo SSE content directly
+        ob_end_clean();
+
+        if ($buffered === false || $buffered === '') {
+            return true;
+        }
+
+        if ($this->looksLikeHtml($buffered)) {
+            // F-057: VarDumper output (dump() calls mid-stream) in debug mode is sent
+            // immediately as a gale-debug-dump SSE event. This keeps the page intact
+            // and lets the developer see dump output in the overlay while the stream
+            // continues processing subsequent events (BR-057.1, BR-057.5).
+            if (config('gale.debug', false) && $this->looksLikeVarDumper($buffered)) {
+                $this->sendVarDumperAsDebugEvent($buffered);
+
+                return true;
+            }
+
+            // Non-VarDumper HTML (Ignition, etc.) gets the full-page replacement
+            // treatment via handleStreamOutput() in the finally block. Re-echo it
+            // so that handler can pick it up.
+            ob_start();
+            echo $buffered;
+
+            return true;
+        }
+
+        // Non-HTML, non-SSE output — validate (throws in debug, emits gale-error in prod)
+        $this->validateStreamOutput($buffered);
+
+        return true;
+    }
+
+    /**
      * Override Laravel redirect helper for streaming mode
      *
      * Binds GaleStreamRedirector which extends Laravel's Redirector to intercept
@@ -2005,6 +2128,11 @@ class GaleResponse implements Responsable
      * which calls exit(). The shutdown function runs after script termination,
      * allowing us to capture and send the native Laravel dd() output via SSE.
      *
+     * When config('gale.debug') is true and the output is VarDumper HTML (sf-dump),
+     * it is sent as a gale-debug-dump SSE event so the frontend debug overlay
+     * renders it without replacing the page (F-057, BR-057.5). Otherwise, falls
+     * back to full document replacement for Ignition error pages and other HTML.
+     *
      * Note: This is public because it's called via register_shutdown_function()
      */
     public function handleShutdownOutput(): void
@@ -2015,17 +2143,23 @@ class GaleResponse implements Responsable
             $output = ob_get_clean() . $output;
         }
 
-        // If there's output, wrap it and send to replace the document
-        if (!empty(trim($output))) {
-            $html = $this->wrapOutputAsHtml($output);
-
-            // Send via SSE to replace document (trusted Laravel backend content)
-            echo "event: gale-patch-elements\n";
-            echo 'data: elements <script>document.open(); document.write(' . json_encode($html) . "); document.close();</script>\n";
-            echo "data: selector body\n";
-            echo "data: mode append\n\n";
-            flush();
+        if (empty(trim($output))) {
+            return;
         }
+
+        // F-057: When debug mode is on and output is VarDumper HTML, send as
+        // gale-debug-dump event so the frontend overlay renders it inline
+        // instead of replacing the entire page (BR-057.5).
+        if (config('gale.debug', false) && $this->looksLikeVarDumper($output)) {
+            $this->sendVarDumperAsDebugEvent($output);
+
+            return;
+        }
+
+        // Fallback: full document replacement for non-VarDumper HTML (Ignition, etc.)
+        // This uses document replacement which is trusted Laravel backend content
+        $html = $this->wrapOutputAsHtml($output);
+        $this->emitDocumentReplacementEvent($html);
     }
 
     /**
@@ -2037,6 +2171,65 @@ class GaleResponse implements Responsable
         return preg_match('/<[a-z][\s\S]*>/i', $content) === 1
             || strpos($content, 'sf-dump') !== false
             || strpos($content, '<!DOCTYPE') !== false;
+    }
+
+    /**
+     * Check if content looks like Symfony VarDumper HTML output (F-057)
+     *
+     * VarDumper HTML output contains the `sf-dump` CSS class and/or the
+     * `Sfdump` JavaScript initialization function. This distinguishes
+     * dd()/dump() output from other HTML like Ignition error pages.
+     */
+    private function looksLikeVarDumper(string $content): bool
+    {
+        return strpos($content, 'sf-dump') !== false
+            || strpos($content, 'Sfdump') !== false;
+    }
+
+    /**
+     * Send VarDumper HTML as a gale-debug-dump SSE event (F-057)
+     *
+     * Emits the captured VarDumper HTML directly as a gale-debug-dump SSE event,
+     * base64-encoding it to avoid SSE line-break issues. The frontend renders
+     * this in the dismissible debug overlay instead of replacing the page.
+     *
+     * The 1MB truncation limit prevents oversized dumps from overwhelming
+     * the SSE stream or the frontend overlay.
+     *
+     * @param string $html Raw VarDumper HTML from output buffer capture
+     */
+    private function sendVarDumperAsDebugEvent(string $html): void
+    {
+        // Truncate oversized dumps to prevent SSE stream issues
+        $maxSize = 1_048_576; // 1MB
+        if (strlen($html) > $maxSize) {
+            $html = substr($html, 0, $maxSize)
+                . '<p style="color:orange;font-weight:bold;">[... output truncated — exceeded 1MB limit ...]</p>';
+        }
+
+        $encoded = base64_encode($html);
+
+        echo "event: gale-debug-dump\n";
+        echo "data: html {$encoded}\n\n";
+        flush();
+    }
+
+    /**
+     * Emit a full document replacement SSE event
+     *
+     * Sends JavaScript to replace the complete browser document content.
+     * Used for Ignition error pages and other non-VarDumper HTML output
+     * in SSE streaming mode. The content is trusted Laravel backend output.
+     *
+     * @param string $html Complete HTML document to display
+     */
+    private function emitDocumentReplacementEvent(string $html): void
+    {
+        echo "event: gale-patch-elements\n";
+        echo 'data: elements <script>document.open(); document.write(' . json_encode($html) . "); document.close();</script>\n";
+        echo "data: selector body\n";
+        echo "data: mode append\n\n";
+        flush();
     }
 
     /**
@@ -2085,11 +2278,11 @@ class GaleResponse implements Responsable
     /**
      * Process output buffer and replace document if content exists
      *
-     * Captures buffered output from the streaming callback. HTML output (like Laravel's
-     * native dd/dump) is displayed in the browser via document replacement. Plain text
-     * that is not valid SSE format triggers stream validation (throws in debug,
-     * emits gale-error in production). Valid SSE output is passed through as-is.
-     * Terminates stream after document replacement.
+     * Captures buffered output from the streaming callback. When gale.debug is true
+     * and the output is VarDumper HTML (dd/dump), it is sent as a gale-debug-dump
+     * SSE event to the frontend debug overlay (F-057, BR-057.5). Other HTML output
+     * (Ignition error pages) triggers full document replacement (BR-F009-02).
+     * Plain text that is not valid SSE triggers stream validation.
      */
     protected function handleStreamOutput(): void
     {
@@ -2103,9 +2296,15 @@ class GaleResponse implements Responsable
             return;
         }
 
-        // HTML output (e.g. dd(), dump(), Ignition error pages) is forwarded to the browser
-        // as a full-page document replacement — this is intentional dd/dump behavior (BR-F009-02)
         if ($this->looksLikeHtml($output)) {
+            // F-057: VarDumper output in debug mode goes to the overlay, not page replacement
+            if (config('gale.debug', false) && $this->looksLikeVarDumper($output)) {
+                $this->sendVarDumperAsDebugEvent($output);
+
+                return;
+            }
+
+            // Non-VarDumper HTML (Ignition error pages) — full document replacement (BR-F009-02)
             $html = $this->wrapOutputAsHtml($output);
             $this->replaceDocumentAndExit($html);
 
@@ -2354,6 +2553,7 @@ class GaleResponse implements Responsable
 
                 // BR-F027-05: SSE streaming responses must never be cached
                 $response->headers->set('Cache-Control', 'no-store');
+                $response->headers->set('Vary', 'Gale-Request');
 
                 // F-064: Run after-hooks on the streaming response (headers can be modified before streaming starts)
                 return static::runAfterHooks($response, $request);
@@ -2365,10 +2565,15 @@ class GaleResponse implements Responsable
 
             if ($mode === 'http') {
                 // HTTP mode: return JsonResponse with serialized events (BR-004.1, BR-004.6)
-                // BR-F027-04: State patches use Cache-Control: no-cache (revalidate, allow conditional)
+                //
+                // BR-F027-04: State patches use 'no-cache' — the browser always revalidates
+                // before serving a cached copy. This enables ETag conditional requests (304)
+                // when etag() is enabled, and is harmless without ETag (browser revalidates
+                // but has no cached copy to serve).
                 $responseHeaders = array_merge([
                     'X-Gale-Response' => 'true',
                     'Cache-Control' => 'no-cache',
+                    'Vary' => 'Gale-Request',
                 ], $extraHeaders);
 
                 // BR-F027-01, BR-F027-08: Add ETag header when opt-in is set
@@ -2392,6 +2597,7 @@ class GaleResponse implements Responsable
                             'ETag' => $etag,
                             'X-Gale-Response' => 'true',
                             'Cache-Control' => 'no-cache',
+                            'Vary' => 'Gale-Request',
                         ]);
                     }
                 }
@@ -2577,9 +2783,22 @@ class GaleResponse implements Responsable
      */
     protected function sendEventImmediately(string $eventType, array $dataLines): void
     {
+        // BR-F009-02: Check for stray echo/print output in the buffer before sending
+        // the next SSE event. This catches non-SSE output inline (per-event) rather than
+        // post-hoc, preventing invalid content from leaking into the SSE stream.
+        // The interceptor also manages the buffer lifecycle: it closes the current
+        // validation buffer so the SSE event can be echoed directly to the client,
+        // then re-opens a fresh buffer for capturing subsequent stray output.
+        $hadValidationBuffer = $this->interceptStrayBufferOutput();
+
         $output = $this->formatEvent($eventType, $dataLines);
         echo $output;
         $this->flushOutput();
+
+        // Re-establish the validation buffer so the next echo/print is captured
+        if ($hadValidationBuffer) {
+            ob_start();
+        }
     }
 
     /**
@@ -2874,6 +3093,51 @@ class GaleResponse implements Responsable
         $scriptLines = explode("\n", trim($scriptTag));
         foreach ($scriptLines as $line) {
             $dataLines[] = "elements {$line}";
+        }
+
+        return $dataLines;
+    }
+
+    /**
+     * Build SSE data lines for a dedicated gale-execute-script event (F-018)
+     *
+     * Creates key-value formatted SSE data lines for the gale-execute-script event type.
+     * Unlike the legacy buildScriptEvent() which embedded a <script> tag inside a
+     * gale-patch-elements event (incompatible with F-014 XSS sanitizer), this method
+     * sends the script code and nonce as structured data that the frontend handles
+     * via json-processor.js executeScript() — the same code path used in HTTP mode.
+     *
+     * SSE format:
+     *   event: gale-execute-script
+     *   data: script <JS code>
+     *   data: nonce <value>           (optional — only when nonce is provided)
+     *   data: autoRemove true|false   (optional — defaults to true on frontend)
+     *
+     * @param string $script JavaScript code to execute
+     * @param string|null $nonce CSP nonce value (null = no nonce)
+     * @param array<string, mixed> $options Script options (autoRemove, attributes)
+     *
+     * @return array<int, string> Array of SSE data lines
+     */
+    protected function buildExecuteScriptSseEvent(string $script, ?string $nonce, array $options): array
+    {
+        $dataLines = [];
+
+        // Script code — may span multiple lines, each prefixed with "script "
+        $scriptLines = explode("\n", $script);
+        foreach ($scriptLines as $line) {
+            $dataLines[] = "script {$line}";
+        }
+
+        // CSP nonce (BR-018.4)
+        if ($nonce !== null && $nonce !== '') {
+            $dataLines[] = "nonce {$nonce}";
+        }
+
+        // Auto-remove setting (defaults to true on the frontend)
+        $autoRemove = $options['autoRemove'] ?? true;
+        if (!$autoRemove) {
+            $dataLines[] = 'autoRemove false';
         }
 
         return $dataLines;

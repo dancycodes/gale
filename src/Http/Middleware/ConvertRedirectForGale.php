@@ -61,6 +61,12 @@ class ConvertRedirectForGale
         // gale()->redirect() creates a GaleRedirect which generates either:
         //   - JSON with gale-redirect event (HTTP mode, BR-011.8)
         //   - SSE with JS navigation event (SSE mode, BR-011.9)
-        return gale()->redirect($targetUrl)->toResponse($request);
+        //
+        // BR-F010-07: Use away() to bypass domain validation for the auto-converted
+        // redirect. The developer explicitly returned redirect($url) or redirect()->away($url)
+        // from their controller, so the URL is intentional. The F-020 validateRedirectSecurity()
+        // check is a safety net for gale()->redirect() calls, not for auto-converted standard
+        // Laravel redirects which already went through Laravel's own redirect logic.
+        return gale()->redirect()->away($targetUrl)->toResponse($request);
     }
 }

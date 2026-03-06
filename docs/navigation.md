@@ -1,10 +1,17 @@
-# Navigation & SPA
+# Navigation & SPA Guide
 
-> **See also:** [Frontend API Reference](frontend-api.md) | [Core Concepts](core-concepts.md) | [Forms, Validation & Uploads](forms-validation-uploads.md)
+> **See also:** [Core Concepts](core-concepts.md) | [Frontend API Reference](frontend-api.md) | [Backend API Reference](backend-api.md) | [Forms, Validation & Uploads](forms-validation-uploads.md)
 
-Build SPA-style navigation with `x-navigate`, `$navigate`, and POST form navigation.
-Covers the PRG pattern, history cache, link prefetching, scroll restoration, FOUC prevention,
-hash handling, and the `gale:navigate` event system.
+Gale turns any multi-page Laravel application into a single-page app (SPA) with a single
+directive. Navigation fetches the new page from the server and morphs the `<body>` content
+in-place -- no full page reload, no lost Alpine state in persistent layout regions, no
+white flash.
+
+This guide covers everything from basic link navigation to advanced patterns like
+prefetching, POST form navigation, scroll management, and FOUC prevention.
+
+> **Prerequisite:** Your layout must include `@gale` in the `<head>`. This loads Alpine.js
+> and the Gale plugin, which powers all navigation features.
 
 ---
 
@@ -118,6 +125,7 @@ priority and the container handler is skipped — exactly one navigation fires p
 | `.key.name` | Send a `Gale-Navigate-Key: name` header for backend filtering |
 | `.debounce.300ms` | Debounce navigation — useful for keyboard-driven navigation |
 | `.throttle.500ms` | Throttle navigation to at most once per interval |
+| `.preserveEmpty` | When merging, preserve empty-string query params instead of stripping them |
 
 **Examples:**
 
@@ -259,14 +267,14 @@ round-trip.
 
 ```javascript
 Alpine.gale.configure({
-    history: {
-        cacheSize: 10,  // Number of pages to cache (default: 10)
+    historyCache: {
+        maxSize: 10,  // Number of pages to cache (default: 10)
     },
 });
 
 // Disable caching entirely
 Alpine.gale.configure({
-    history: false,
+    historyCache: false,
 });
 ```
 
@@ -291,7 +299,7 @@ return gale()->view('posts.index', $data)
 
 **Cache limits and eviction:**
 
-When the cache reaches `cacheSize`, the least recently used entry is evicted. If
+When the cache reaches `maxSize`, the least recently used entry is evicted. If
 `sessionStorage` is unavailable (e.g., private browsing mode, quota exceeded), caching is
 silently skipped — navigation still works, just without the instant back-navigation benefit.
 
@@ -409,12 +417,14 @@ With View Transitions enabled, the browser captures a screenshot of the current 
 the navigation, then cross-fades to the new content. The entire transition is handled by the
 browser — no custom CSS required.
 
-Disable for a specific link:
+Disable for a specific navigation via `$navigate`:
 
 ```html
-<a href="/page" x-navigate @click="$navigate('/page', { transition: false })">
-    Skip transition
-</a>
+<div x-data>
+    <button @click="$navigate('/page', { transition: false })">
+        Navigate without transition
+    </button>
+</div>
 ```
 
 > **Tip:** Always set `@gale` in your layout's `<head>`. The directive ensures Alpine and the
@@ -432,16 +442,13 @@ when the user clicks.
 Add `x-prefetch` to any `x-navigate` link to enable prefetching for that link:
 
 ```html
-<!-- Prefetch with default delay (65ms hover) -->
+<!-- Prefetch this link on hover (65ms default delay) -->
 <a href="/dashboard" x-navigate x-prefetch>Dashboard</a>
-
-<!-- Prefetch with custom delay (200ms hover) -->
-<a href="/profile" x-navigate x-prefetch.200ms>Profile</a>
 ```
 
-The default hover delay is 65ms. Gale waits this long before firing the background fetch —
-long enough that brief hover events (moving the mouse across the link) do not trigger
-unnecessary requests.
+The hover delay is 65ms by default (configurable globally via `prefetch.delay`). Gale waits
+this long before firing the background fetch -- long enough that brief hover events (moving
+the mouse across the link) do not trigger unnecessary requests.
 
 ### Global Prefetch
 
@@ -643,15 +650,20 @@ these events to implement loading indicators, analytics, cleanup, and other navi
 | Event | Dispatched on | Detail payload | Description |
 |-------|--------------|----------------|-------------|
 | `gale:navigate` | `document` | `{ url, method, replace, _isPostForm }` | Navigation starts (before fetch). Fired for both GET navigations and POST form submissions. |
-| `gale:navigated` | `document` | `{ url }` | Navigation completed successfully. |
-| `gale:navigate-error` | `document` | `{ url, status, message, context, recoverable }` | Navigation failed (network error, 4xx, 5xx). |
+| `gale:patch-complete` | `document` | `{ el, url }` | Full-page morph completed and Alpine has re-initialized on the new content. This is the "navigation finished" signal. |
 
-> **Note:** The `_isPostForm` flag in `gale:navigate` is `true` for POST form submissions
-> (informational only). The backend navigation listener ignores events with this flag.
+> **Note:** The `_isPostForm` flag in `gale:navigate` is `true` for client-initiated POST
+> form submissions (informational only). The backend navigation listener ignores events with
+> this flag to avoid triggering duplicate GET requests.
+
+> **Note:** There is no separate "navigation error" event. Navigation errors are handled via
+> the general Gale error event system (`gale:error`, `gale:network-error`, `gale:server-error`).
+> Additionally, a persistent error banner is shown on the page when navigation fails, and the
+> URL bar is reverted to the original page URL.
 
 ### Loading Indicator Example
 
-Implement a progress bar using `gale:navigate` and `gale:navigated`:
+Implement a progress bar using `gale:navigate` and `gale:patch-complete`:
 
 ```html
 <!-- Progress bar element -->
@@ -668,7 +680,7 @@ document.addEventListener('gale:navigate', () => {
     setTimeout(() => { bar.style.width = '80%'; }, 100);
 });
 
-document.addEventListener('gale:navigated', () => {
+document.addEventListener('gale:patch-complete', () => {
     bar.style.width = '100%';
     setTimeout(() => {
         bar.style.display = 'none';
@@ -707,7 +719,7 @@ html.gale-navigating::before {
 Track page views for each SPA navigation:
 
 ```javascript
-document.addEventListener('gale:navigated', (event) => {
+document.addEventListener('gale:patch-complete', (event) => {
     // event.detail.url is the URL after navigation
     const url = event.detail?.url ?? window.location.href;
 
@@ -721,11 +733,11 @@ document.addEventListener('gale:navigated', (event) => {
 **Error tracking:**
 
 ```javascript
-document.addEventListener('gale:navigate-error', (event) => {
-    console.error('[Navigation Error]', event.detail);
+document.addEventListener('gale:error', (event) => {
+    console.error('[Gale Error]', event.detail);
 
     // Send to your error tracking service
-    Sentry.captureMessage('Navigation failed', {
+    Sentry.captureMessage('Gale request failed', {
         extra: event.detail,
     });
 });
@@ -763,12 +775,12 @@ after the morph completes. They run `x-init` and initialize normally.
 
 **Resetting state on navigation:**
 
-If a component should reset its state on every navigation (e.g., a search form that should clear on page change), use `x-init` to respond to the `gale:navigated` event:
+If a component should reset its state on every navigation (e.g., a search form that should clear on page change), use `x-init` to respond to the `gale:patch-complete` event:
 
 ```html
 <div
     x-data="{ query: '', results: [] }"
-    x-init="document.addEventListener('gale:navigated', () => { query = ''; results = []; })"
+    x-init="document.addEventListener('gale:patch-complete', () => { query = ''; results = []; })"
 >
     <input x-model="query" type="search" placeholder="Search...">
 </div>

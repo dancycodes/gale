@@ -37,6 +37,9 @@ class GaleRedirect implements Responsable
     /** @var array<string, mixed> Session flash data to persist for next request */
     protected array $flashData = [];
 
+    /** @var bool When true, toResponse() skips domain validation (set by away()) */
+    protected bool $bypassDomainValidation = false;
+
     /**
      * Initialize redirect builder with optional target URL and parent response
      *
@@ -81,6 +84,7 @@ class GaleRedirect implements Responsable
     public function away(string $url): self
     {
         $this->url = $url;
+        $this->bypassDomainValidation = true;
 
         return $this;
     }
@@ -168,7 +172,16 @@ class GaleRedirect implements Responsable
         // F-020: Server-side redirect security validation (BR-020.5, BR-020.9)
         // Validates the URL before emitting it to the frontend.
         // This is the server-side layer of the defense-in-depth strategy.
-        $this->validateRedirectSecurity($this->url);
+        // BR-F010-07: away() bypasses all domain validation — the developer has
+        // explicitly signalled that the redirect target is external and trusted.
+        // Dangerous-protocol blocking (javascript:, data:, etc.) still runs even
+        // for away() calls, as those are never legitimate redirect targets.
+        if (!$this->bypassDomainValidation) {
+            $this->validateRedirectSecurity($this->url);
+        } else {
+            // Even when bypassing domain validation, still block dangerous protocols
+            $this->validateDangerousProtocols($this->url);
+        }
 
         // For non-Gale requests, use standard Laravel redirect
         /** @phpstan-ignore method.notFound (isGale is a Request macro) */
@@ -190,14 +203,13 @@ class GaleRedirect implements Responsable
             }
         }
 
-        $safeUrl = json_encode($this->url, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
-
-        // Direct navigation - no setTimeout needed since frontend handles response properly
-        $script = "window.location.href = {$safeUrl}";
-
+        // F-012: Use dedicated gale-redirect event instead of gale-execute-script/gale-patch-elements.
+        // The previous approach used js() which emits gale-patch-elements with a <script> tag
+        // in SSE mode — the XSS sanitizer (F-014) strips <script> tags, breaking SSE redirects.
+        // emitRedirect() emits a native gale-redirect event that bypasses sanitization entirely.
         /** @var \Symfony\Component\HttpFoundation\Response $response */
         $response = $this->galeResponse
-            ->js($script, ['autoRemove' => true])
+            ->emitRedirect($this->url)
             ->toResponse($request);
 
         return $response;
@@ -333,6 +345,31 @@ class GaleRedirect implements Responsable
             "Redirect blocked: external domain '{$urlHost}' is not in the allowed domains list. " .
             "Add it to config('gale.redirect.allowed_domains') or set config('gale.redirect.allow_external') to true."
         );
+    }
+
+    /**
+     * Validate only the protocol portion of a URL (used by away() which bypasses domain checks)
+     *
+     * Even when the developer explicitly uses away() to redirect to an external domain,
+     * dangerous protocols like javascript:, data:, vbscript:, and blob: are never legitimate
+     * redirect targets and must still be blocked.
+     *
+     * @param string $url URL to validate
+     *
+     * @throws \InvalidArgumentException When the URL uses a dangerous protocol
+     */
+    protected function validateDangerousProtocols(string $url): void
+    {
+        $normalized = $this->normalizeUrlForProtocolCheck($url);
+        $protocol = $this->extractProtocol($normalized);
+
+        $blockedProtocols = ['javascript:', 'data:', 'vbscript:', 'blob:'];
+
+        if (in_array($protocol, $blockedProtocols, true)) {
+            throw new \InvalidArgumentException(
+                "Redirect blocked: dangerous protocol '{$protocol}' is not allowed. URL: {$url}"
+            );
+        }
     }
 
     /**

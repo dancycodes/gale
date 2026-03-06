@@ -25,6 +25,7 @@ Complete JavaScript API reference for the Alpine Gale plugin. Covers every Alpin
   - [$clearFiles](#clearfiles)
   - [$formatBytes](#formatbytes)
   - [$uploading / $uploadProgress / $uploadError](#uploading--uploadprogress--uploaderror)
+- [Utility Magics](#utility-magics)
   - [$lazy](#lazy)
   - [$listen](#listen)
   - [$invoke](#invoke)
@@ -64,7 +65,15 @@ Add `@gale` to your layout `<head>`. This outputs the Alpine.js CDN script plus 
 </head>
 ```
 
-The `@gale` directive also injects several `window.*` globals used to bridge PHP config values into the plugin (`GALE_SANITIZE_HTML`, `GALE_ALLOW_SCRIPTS`, `GALE_CSP_NONCE`, `GALE_REDIRECT_CONFIG`, `GALE_DEBUG_MODE`).
+The `@gale` directive also injects several `window.*` globals used to bridge PHP config values into the plugin:
+
+| Global | Source | Purpose |
+|--------|--------|---------|
+| `GALE_SANITIZE_HTML` | `config('gale.sanitize_html')` | Controls XSS sanitization of server HTML |
+| `GALE_ALLOW_SCRIPTS` | `config('gale.allow_scripts')` | Controls `<script>` tag preservation |
+| `GALE_CSP_NONCE` | `@gale(['nonce' => $nonce])` | CSP nonce for dynamic scripts |
+| `GALE_REDIRECT_CONFIG` | `config('gale.redirect')` | Redirect security settings |
+| `GALE_DEBUG_MODE` | `config('gale.debug')` | Enables debug panel and error overlay |
 
 If you manage Alpine yourself (npm / Vite), register the plugin manually:
 
@@ -82,7 +91,7 @@ Alpine.start();
 
 ### `$action`
 
-**Signature:** `$action(url, options = {}): Promise<void>`
+**Signature:** `$action(url: string, options?: object): Promise<void>`
 
 The primary HTTP magic. Performs an HTTP POST by default, serializes the component's `x-sync` state as the request body, and applies the server response back to the component.
 
@@ -98,17 +107,25 @@ The primary HTTP magic. Performs an HTTP POST by default, serializes the compone
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `url` | `string` | Request URL (absolute or relative) |
-| `options` | `object` | Optional request options — see [Options Object](#options-object) |
+| `options` | `object` | Optional request options -- see [Options Object](#options-object) |
 
-**Return type:** `Promise<void>` — resolves when the HTTP response is received; patch application happens asynchronously via `requestAnimationFrame`.
+**Return type:** `Promise<void>` -- resolves when the HTTP response is received; patch application happens asynchronously via `requestAnimationFrame`.
 
 **Default method:** POST. Override with `{ method: 'GET' }` or use a [method shorthand](#method-shorthands).
 
-**Mode selection:**
+**Mode selection (highest priority wins):**
 
-1. Per-action option `{ sse: true }` or `{ http: true }` (highest priority)
+1. Per-action option `{ sse: true }` or `{ http: true }` (if both set, `sse` wins)
 2. Global config: `Alpine.gale.configure({ defaultMode: 'sse' })`
 3. Built-in default: `'http'`
+
+**CSRF:** Tokens are automatically injected for all non-GET methods via the `X-XSRF-TOKEN` header (read from Laravel's `XSRF-TOKEN` cookie or the `csrf-token` meta tag).
+
+**File uploads:** When the component contains `x-files` inputs with selected files, `$action` automatically uses `multipart/form-data` encoding instead of JSON.
+
+**Offline handling:** When the browser is offline, actions are queued (default), failed, or handled by a custom function depending on the `offline.mode` config.
+
+**Form validation:** When `$action` is triggered from inside a `<form>` with `x-validate`, HTML5 constraint validation runs first. The request is blocked if any field is invalid.
 
 ---
 
@@ -149,35 +166,43 @@ Every HTTP magic accepts a second `options` argument:
 | `include` | `string[]` | all x-sync keys | State keys to whitelist in the request body |
 | `exclude` | `string[]` | none | State keys to blacklist from the request body |
 | `includeFormFields` | `boolean` | `true` | Include form fields in the serialized state |
-| `includeComponents` | `string[]` \| `object` | — | Named components (by name) to include in the request |
-| `includeComponentsByTag` | `string[]` | — | Named components (by tag) to include in the request |
-| `headers` | `object` | — | Additional HTTP headers to merge |
-| `debounce` | `number` | — | Trailing-edge debounce in milliseconds |
+| `includeComponents` | `string[]` \| `object` | -- | Named components (by name) to include in the request |
+| `includeComponentsByTag` | `string[]` | -- | Named components (by tag) to include in the request |
+| `headers` | `object` | -- | Additional HTTP headers to merge |
+| `debounce` | `number` | -- | Trailing-edge debounce in milliseconds |
 | `leading` | `boolean` | `false` | Leading-edge debounce (fire on first call, suppress within window) |
-| `throttle` | `number` | — | Throttle in milliseconds (at most once per window) |
+| `throttle` | `number` | -- | Throttle in milliseconds (at most once per window) |
 | `trailing` | `boolean` | `false` | Emit one trailing call after throttle window ends |
-| `confirm` | `string` | — | Show a confirmation dialog with this message before the request |
-| `optimistic` | `object` | — | Apply this state patch immediately before the request (rollback on error) |
+| `confirm` | `string` | -- | Show a confirmation dialog with this message before the request |
+| `optimistic` | `object` | -- | Apply this state patch immediately before the request (rollback on error) |
 | `delta` | `boolean` | `true` | When `false`, send full state instead of dirty-key delta |
 | `queue` | `string` | global config | Per-action queue mode: `'parallel'`, `'sequential'`, `'cancel-previous'` |
-| `retryInterval` | `number` | — | Initial SSE retry interval in ms (SSE mode only) |
-| `retryScaler` | `number` | — | Exponential backoff multiplier (SSE mode only) |
-| `retryMaxWaitMs` | `number` | — | Maximum retry interval cap in ms (SSE mode only) |
-| `retryMaxCount` | `number` | — | Maximum retry attempts (SSE mode only) |
-| `requestCancellation` | `string` \| `AbortController` | — | Cancellation mode or a custom `AbortController` |
-| `onProgress` | `function` | — | Upload progress callback `(percent: number) => void` (file uploads only) |
+| `onError` | `function` | -- | Per-request error callback `(error) => void` -- return `false` to suppress global error |
+| `onProgress` | `function` | -- | Upload progress callback `(percent: number) => void` (file uploads only) |
+| `retryInterval` | `number` | -- | Initial SSE retry interval in ms (SSE mode only) |
+| `retryScaler` | `number` | -- | Exponential backoff multiplier (SSE mode only) |
+| `retryMaxWaitMs` | `number` | -- | Maximum retry interval cap in ms (SSE mode only) |
+| `retryMaxCount` | `number` | -- | Maximum retry attempts (SSE mode only) |
+| `requestCancellation` | `string` \| `AbortController` | -- | Cancellation mode or a custom `AbortController` |
 
 **Debounce and throttle notes:**
 
 - If both `debounce` and `throttle` are provided, `debounce` wins and a `console.warn` is emitted.
-- Timer key is the URL — different URLs on the same element have independent timers.
+- Timer key is the URL -- different URLs on the same element have independent timers.
 - Timers are automatically cancelled when the component unmounts.
+
+**Optimistic notes:**
+
+- The optimistic state is applied _after_ serializing the current state for the request body. The server always receives the actual state, not the prediction.
+- On success, the server response replaces the optimistic state.
+- On error, the pre-optimistic state snapshot is restored (rollback). A `gale:rollback` event fires on the element.
+- Multiple concurrent optimistic actions on the same component track independently.
 
 **Examples:**
 
 ```javascript
 // Debounce search input
-$action('/search', { data: { q: query }, debounce: 300 })
+$action('/search', { include: ['query'], debounce: 300 })
 
 // Leading-edge debounce (fires immediately, then suppresses)
 $action('/suggest', { debounce: 200, leading: true })
@@ -199,6 +224,14 @@ $action('/update-email', { include: ['email'] })
 
 // Send current component + the cart component state
 $action('/checkout', { includeComponents: ['cart'] })
+
+// Per-request error handler
+$action('/risky', {
+    onError: (error) => {
+        console.log('Failed:', error.message);
+        return false; // suppress global gale:error event
+    }
+})
 ```
 
 ---
@@ -209,7 +242,7 @@ $action('/checkout', { includeComponents: ['cart'] })
 
 **Type:** `object` (reactive)
 
-Global connection state proxy. Provides reactive access to the plugin's runtime state across all components. All properties are reactive — changes automatically update Alpine bindings.
+Global connection state proxy. Provides reactive access to the plugin's runtime state across all components. All properties are reactive -- changes automatically update Alpine bindings.
 
 **Properties:**
 
@@ -220,7 +253,7 @@ Global connection state proxy. Provides reactive access to the plugin's runtime 
 | `retrying` | `boolean` | `true` when a request is being retried |
 | `retriesFailed` | `boolean` | `true` when all retry attempts have been exhausted |
 | `error` | `boolean` | `true` when `lastError` is set |
-| `lastError` | `object \| null` | Most recent error object — see shape below |
+| `lastError` | `object \| null` | Most recent error object -- see shape below |
 | `errors` | `object[]` | Array of last 10 errors |
 | `rateLimited` | `object \| null` | `{ until: Date, retryAfter: number }` when a 429 is active, else `null` |
 | `rateLimitMessage` | `string \| null` | Human-readable message when rate-limited |
@@ -246,6 +279,8 @@ Global connection state proxy. Provides reactive access to the plugin's runtime 
 |--------|-------------|
 | `clearErrors()` | Clear `lastError`, `errors`, and reset `retriesFailed` |
 
+**State snapshot:** `$gale.state` returns a non-reactive plain object snapshot of all properties -- useful for debugging or logging.
+
 **Examples:**
 
 ```html
@@ -267,6 +302,9 @@ Global connection state proxy. Provides reactive access to the plugin's runtime 
 <div x-show="$gale.error">
     Error: <span x-text="$gale.lastError?.message"></span>
 </div>
+
+<!-- Active request counter -->
+<div>Active requests: <span x-text="$gale.activeCount"></span></div>
 ```
 
 ---
@@ -275,7 +313,7 @@ Global connection state proxy. Provides reactive access to the plugin's runtime 
 
 **Signature:** `$fetching(): boolean`
 
-Per-component loading state. Returns `true` when a Gale request is in flight for the **current Alpine component** (the closest `x-data` ancestor). This is scoped — it only reflects requests originating from within the component.
+Per-component loading state. Returns `true` when a Gale request is in flight for the **current Alpine component** (the closest `x-data` ancestor). This is scoped -- it only reflects requests originating from within the component.
 
 ```html
 <div x-data="{ name: '' }" x-sync>
@@ -285,7 +323,7 @@ Per-component loading state. Returns `true` when a Gale request is in flight for
 </div>
 ```
 
-> **Note:** `$fetching` is a function — call it as `$fetching()`. It is scoped to the component, unlike `$gale.loading` which is global.
+> **Note:** `$fetching` is a function -- call it as `$fetching()`. It is scoped to the component, unlike `$gale.loading` which is global.
 
 ---
 
@@ -293,7 +331,7 @@ Per-component loading state. Returns `true` when a Gale request is in flight for
 
 **Signature:** `$dirty(key?: string): boolean`
 
-Returns whether any component state (or a specific key) has been modified since the last server response. Relies on dirty tracking being active — it is automatically enabled for components using `x-sync`.
+Returns whether any component state (or a specific key) has been modified since the last server response. Dirty tracking is automatically activated for components using `x-sync`.
 
 ```html
 <div x-data="{ title: '', body: '' }" x-sync>
@@ -308,6 +346,13 @@ Returns whether any component state (or a specific key) has been modified since 
 |-----------|-------------|
 | no argument | `true` if any tracked key is dirty |
 | `key` (string) | `true` if that specific key is dirty |
+
+**How dirty tracking works:**
+
+- A snapshot of the component state is taken when the component initializes and after each successful server response.
+- When any state key differs from the snapshot (using deep equality), it is marked dirty.
+- Dirty keys are automatically included in the request body (delta payload), even when `include`/`exclude` are not set.
+- After a successful server response, all dirty flags reset. After a failed response, dirty flags are preserved.
 
 ---
 
@@ -346,9 +391,9 @@ Returns file info objects with shape:
 
 ### `$filePreview`
 
-**Signature:** `$filePreview(name, index = 0): string | null`
+**Signature:** `$filePreview(name: string, index?: number): string | null`
 
-Returns the blob preview URL for a file at the given index. Convenience wrapper around `$files(name)[index]?.previewUrl`.
+Returns the blob preview URL for a file at the given index (default `0`). Convenience wrapper around `$files(name)[index]?.previewUrl`.
 
 ```html
 <img :src="$filePreview('avatar')">
@@ -388,7 +433,7 @@ Upload state magics available inside any component with `x-files` bindings.
 | Magic | Type | Description |
 |-------|------|-------------|
 | `$uploading` | `boolean` | `true` while a file upload is in progress |
-| `$uploadProgress` | `number` | Upload progress percentage (0–100) |
+| `$uploadProgress` | `number` | Upload progress percentage (0--100) |
 | `$uploadError` | `string \| null` | Error message if upload failed, else `null` |
 
 ```html
@@ -404,9 +449,11 @@ Upload state magics available inside any component with `x-files` bindings.
 
 ---
 
+## Utility Magics
+
 ### `$lazy`
 
-**Signature:** `$lazy(url: string, options = {}): Promise<void>`
+**Signature:** `$lazy(url: string, options?: object): Promise<void>`
 
 Programmatically fetch a URL and morph the response into the current element. Useful for on-demand content loading triggered by user interaction (complementing the `x-lazy` directive which loads on viewport entry).
 
@@ -417,7 +464,7 @@ Programmatically fetch a URL and morph the response into the current element. Us
 </div>
 ```
 
-Accepts the same `options` object as `$action`.
+Accepts the same `options` object as `$action` (e.g. `{ sse: true }` for SSE transport).
 
 ---
 
@@ -425,11 +472,18 @@ Accepts the same `options` object as `$action`.
 
 **Signature:** `$listen(channel: string): object`
 
-Returns a subscription controller for a server-push channel. Useful for programmatic subscription management (complement to `x-listen`).
+Returns a subscription controller for a server-push channel (SSE). Opens a persistent SSE connection to the channel endpoint (`/gale/channel/{name}` by default). The server can push events at any time.
 
 ```html
-<div x-data x-init="$listen('notifications').subscribe()">
+<div x-data="{ notifications: [] }" x-sync
+     x-init="$listen('notifications').subscribe()">
+    <template x-for="n in notifications">
+        <div x-text="n.message"></div>
+    </template>
+</div>
 ```
+
+The subscription auto-reconnects with exponential backoff (1s, 2s, 4s, 8s... max 30s) on connection failure. The channel is auto-unsubscribed when the component is destroyed.
 
 ---
 
@@ -437,7 +491,7 @@ Returns a subscription controller for a server-push channel. Useful for programm
 
 **Signature:** `$invoke(componentName: string, method: string, ...args): *`
 
-Invoke a method on a named component from another component. The named component must be registered with `x-component`.
+Invoke a method on a named component from another component. The target component must be registered with `x-component`.
 
 ```html
 <div x-data>
@@ -453,7 +507,7 @@ This is equivalent to `$components.invoke(name, method, ...args)`.
 
 ### `$navigate`
 
-**Signature:** `$navigate(url: string, options = {}): Promise<void>`
+**Signature:** `$navigate(url: string, options?: object): Promise<void>`
 
 Programmatically trigger SPA navigation to a URL. Uses the same full-page morph mechanism as `x-navigate` link clicks.
 
@@ -495,9 +549,9 @@ Access and control named Alpine components from any other component. Named compo
 | `$components.update(name, updates)` | `void` | Apply a JSON Merge Patch to the component state |
 | `$components.create(name, state, options?)` | `void` | Initialize a state namespace inside the component |
 | `$components.delete(name, keys)` | `void` | Delete one or more state properties |
-| `$components.watch(name, keyOrCallback, callback?)` | `function` | Watch a key (or all state) for changes — returns unwatch function |
+| `$components.watch(name, keyOrCallback, callback?)` | `function` | Watch a key (or all state) for changes -- returns unwatch function |
 | `$components.when(name, timeout?)` | `Promise<void>` | Promise that resolves when the component registers |
-| `$components.onReady(names, callback)` | `function` | Callback when one or more components are ready — returns cleanup function |
+| `$components.onReady(names, callback)` | `function` | Callback when one or more components are ready -- returns cleanup function |
 | `$components.invoke(name, method, ...args)` | `*` | Call a method on the named component |
 
 **Examples:**
@@ -522,6 +576,13 @@ Access and control named Alpine components from any other component. Named compo
     })
 ">
 </div>
+
+<!-- Watch for cart count changes -->
+<div x-data="{ cartCount: 0 }" x-init="
+    $components.watch('cart', 'count', (value) => { cartCount = value })
+">
+    Cart: <span x-text="cartCount"></span>
+</div>
 ```
 
 **Backend targeting:** The server can patch any named component by name using `gale()->patchComponent('cart', $data)`. The component does not need to be in the same page region as the requesting component.
@@ -543,6 +604,9 @@ Declares which state keys to synchronize with the server on each request.
 
 <!-- String syntax (convenience) -->
 <div x-data="{ name: '', email: '' }" x-sync="name, email">
+
+<!-- Explicit wildcard (same as empty) -->
+<div x-data="{ name: '', email: '' }" x-sync="*">
 
 <!-- No x-sync: send no state automatically -->
 <div x-data="{ count: 0 }">
@@ -626,7 +690,7 @@ Registers the Alpine component under a name in the global component registry. En
 
 ```html
 <div x-data="{ total: 0, count: 0 }" x-component="cart" x-sync>
-    <span x-text="count"></span> items — $<span x-text="total"></span>
+    <span x-text="count"></span> items -- $<span x-text="total"></span>
 </div>
 ```
 
@@ -652,7 +716,32 @@ Binds a field name to the server validation message system. The element's text c
 
 The directive reads from the `messages` key in the component state (populated by the server via `gale()->messages($errors)`).
 
-**Configuration:** Custom message bag key and CSS classes can be set via `Alpine.gale.configureMessage({ stateKey, errorClass })`.
+**Array validation with template literals:**
+
+```html
+<template x-for="(item, index) in items">
+    <div>
+        <input x-model="items[index].name">
+        <span x-message="`items.${index}.name`" class="text-red-500"></span>
+    </div>
+</template>
+```
+
+**Configuration:** Custom message bag key and CSS classes can be set via `Alpine.gale.configureMessage()`:
+
+```javascript
+Alpine.gale.configureMessage({
+    defaultStateKey: 'errors',   // Read from 'errors' instead of 'messages'
+    autoHide: true,              // Hide element when no message
+    autoShow: true,              // Show element when message present
+    typeClasses: {
+        success: 'message-success',
+        error: 'message-error',
+        warning: 'message-warning',
+        info: 'message-info',
+    },
+});
+```
 
 ---
 
@@ -700,7 +789,30 @@ Auto-binds a form input to the component state. Creates the state property if it
 </div>
 ```
 
-`x-name` differs from `x-model` in that it also registers the field name for state serialization and Gale's form system.
+`x-name` differs from `x-model` in that it also sets the `name` attribute for Laravel form compatibility and creates the state property if missing.
+
+**Modifiers:**
+
+| Modifier | Description |
+|----------|-------------|
+| `.array` | Force array mode (multiple checkboxes with the same name) |
+| `.lazy` | Use lazy binding (update on change instead of input) |
+
+**Nested paths:**
+
+```html
+<!-- Creates state.user = { email: '' } -->
+<input type="email" x-name="user.email">
+```
+
+**Type-aware defaults:**
+
+- Text inputs: `''` (empty string)
+- Checkboxes: `false`
+- File inputs: bound via `x-files` internally
+- Multiple checkboxes with same name: `[]` (array)
+
+**State creation event:** Dispatches `gale:state-created` on the element when a new state property is created.
 
 ---
 
@@ -710,7 +822,7 @@ Runs an Alpine expression on a repeating timer. Useful for polling.
 
 **Syntax:** `x-interval.{duration}="{expression}"`
 
-Duration is specified as a modifier: `.2s` (2 seconds), `.500ms` (500 milliseconds).
+Duration is specified as a modifier: `.2s` (2 seconds), `.500ms` (500 milliseconds). Default: 5 seconds.
 
 ```html
 <!-- Poll every 5 seconds -->
@@ -734,9 +846,15 @@ Duration is specified as a modifier: `.2s` (2 seconds), `.500ms` (500 millisecon
 
 **Stop mechanisms:**
 
-1. **Client-side condition:** `x-interval-stop="expression"` — stops permanently when expression is truthy (evaluated after each tick)
-2. **Server-side stop:** Server dispatches `gale()->dispatch('gale-interval-stop')` — stops all polling elements
+1. **Client-side condition:** `x-interval-stop="expression"` -- stops permanently when expression is truthy (evaluated after each tick)
+2. **Server-side stop:** Server dispatches `gale()->dispatch('gale-interval-stop')` -- stops all polling elements
 3. **Manual stop/restart:** Dispatch `gale-interval-stop` or `gale-interval-restart` events on the element
+
+**Stopped state indicators:**
+
+- Element gets `data-interval-stopped` attribute when stopped
+- `gale-interval-stopped` event dispatched when polling stops
+- `gale-interval-restarted` event dispatched when polling restarts
 
 ```html
 <!-- Stop when isDone becomes true -->
@@ -763,7 +881,11 @@ Intercepts a click or submit event and shows a confirmation dialog before allowi
 </form>
 ```
 
-The dialog text is the directive expression value. The built-in dialog is styled by default; replace it globally with `Alpine.gale.configure({ confirmTemplate: '<div>...</div>' })`.
+The dialog text is the directive expression value (evaluated as an Alpine expression, so dynamic messages work). The built-in dialog is styled by default; replace it globally with `Alpine.gale.configure({ confirmTemplate: '<div>...</div>' })`.
+
+**Keyboard support:** Enter activates the focused button, Escape cancels. Focus is trapped inside the dialog.
+
+**Events:** `gale:confirm` dispatches on `document` when confirmed; `gale:cancel` when cancelled.
 
 ---
 
@@ -779,6 +901,17 @@ Defers loading of content until the element enters the viewport (using Intersect
 
 The content at the URL must be a full Gale response (`gale()->view(...)`). The existing element content is replaced by the server response on first visibility.
 
+**Modifiers:**
+
+| Modifier | Description |
+|----------|-------------|
+| `.sse` | Use SSE transport instead of HTTP JSON |
+| `.repeat` | Re-fetch each time the element re-enters the viewport |
+
+**Custom root margin:** Set `data-lazy-margin="400px"` on the element to adjust the Intersection Observer root margin (default: 200px).
+
+**Custom placeholder:** Include a child element with `data-lazy-placeholder` to use as the loading placeholder instead of the default shimmer.
+
 ---
 
 ### `x-validate`
@@ -793,7 +926,7 @@ Integrates HTML5 form validation with Gale actions. When `$action` is triggered 
 </form>
 ```
 
-Custom validation expression:
+Custom validation expression (runs before `checkValidity()`):
 
 ```html
 <form x-validate="customValidate()">
@@ -801,30 +934,35 @@ Custom validation expression:
 </form>
 ```
 
-When `x-validate` is present, the browser's native validation UI (tooltips) is shown for invalid fields before any request is made.
+When `x-validate` is present, the browser's native validation UI (tooltips) is shown for invalid fields before any request is made. The custom expression can call `setCustomValidity()` on form elements to integrate with the native UI.
+
+**Bypass:** Add `novalidate` attribute to the form to disable client-side validation.
+
+**Event:** `gale:validation-failed` dispatches on `document` with `{ fields: [...] }` when validation blocks a request.
 
 ---
 
 ### `x-dirty`
 
-Applies a CSS class to an element when the component has unsaved (dirty) state. Useful for showing "unsaved changes" indicators.
+Applies visibility or CSS classes to an element based on the component's dirty state.
 
 ```html
 <div x-data="{ title: '' }" x-sync>
     <input x-model="title">
+    <!-- Toggle visibility when any state is dirty -->
     <span x-dirty class="text-amber-500 hidden">Unsaved changes</span>
-    <!-- Or on the input itself: -->
+    <!-- Add CSS classes when dirty -->
     <input x-model="body" x-dirty="ring-2 ring-amber-400">
 </div>
 ```
 
-Without an expression, `x-dirty` toggles the element's visibility. With an expression, it adds/removes those CSS classes.
+Without an expression, `x-dirty` toggles the element's visibility. With an expression, it adds/removes those CSS classes when the component has dirty state.
 
 ---
 
 ### `x-listen`
 
-Subscribes to a server-push channel (SSE). The expression is evaluated whenever the server pushes a message to the channel.
+Subscribes to a server-push channel (SSE). The channel name maps to a server-side push channel endpoint.
 
 ```html
 <div x-data="{ notifications: [] }" x-sync x-listen="notifications">
@@ -834,7 +972,9 @@ Subscribes to a server-push channel (SSE). The expression is evaluated whenever 
 </div>
 ```
 
-The channel name maps to a server-side push channel endpoint. See the backend docs for `gale()->pushChannel()`.
+The subscription auto-reconnects with exponential backoff on connection failure. The channel is auto-unsubscribed when the component is destroyed.
+
+See the backend docs for `gale()->push($channel)`.
 
 ---
 
@@ -938,13 +1078,13 @@ Alpine.gale.configure({
 | `viewTransitions` | `boolean` | `true` | Use View Transitions API during SPA navigation |
 | `foucTimeout` | `number` | `3000` | Max ms to wait for external stylesheets to load before proceeding with SPA navigation |
 | `navigationIndicator` | `boolean` | `true` | Show a top-of-page progress bar during SPA navigation |
-| `settleDuration` | `number` | `0` | Settle delay in ms after DOM patch (for CSS transitions) — bridged to swap-settle |
+| `settleDuration` | `number` | `0` | Settle delay in ms after DOM patch (for CSS transitions) -- bridged to swap-settle |
 | `morphTransitions` | `boolean` | `true` | Detect active CSS transitions on morph targets and defer morph until complete |
-| `maxConcurrent` | `number` | `6` | Maximum concurrent HTTP requests (values ≤ 0 are clamped to 1) |
+| `maxConcurrent` | `number` | `6` | Maximum concurrent HTTP requests (values <= 0 are clamped to 1) |
 | `warnPayloadSize` | `number` | `102400` | Response byte size above which a `console.warn` fires in dev mode (0 = always warn) |
 | `queue` | `'parallel' \| 'sequential' \| 'cancel-previous'` | `'parallel'` | Global default request queue mode |
-| `historyCache` | `boolean \| { maxSize: number }` | `{ maxSize: 10 }` | SPA history cache — `false` to disable |
-| `prefetch` | `boolean \| { delay?, maxSize?, ttl? }` | `false` | Global link prefetch — `true` for defaults, `false` to disable |
+| `historyCache` | `boolean \| { maxSize: number }` | `{ maxSize: 10 }` | SPA history cache -- `false` to disable |
+| `prefetch` | `boolean \| { delay?, maxSize?, ttl? }` | `false` | Global link prefetch -- `true` for defaults, `false` to disable |
 | `sseShared` | `boolean` | `false` | Share one SSE connection per URL across multiple components |
 | `sseHeartbeatTimeout` | `number` | `60000` | Ms of silence before proactive SSE reconnection (0 = disabled) |
 | `pauseOnHidden` | `boolean` | `true` | Pause SSE connections when the browser tab is hidden |
@@ -956,36 +1096,38 @@ Alpine.gale.configure({
 | `confirmTemplate` | `string \| null` | `null` | Custom HTML template for confirmation dialogs (replaces built-in modal) |
 | `retries` | `number` | `3` | Shorthand for `retry.maxRetries` |
 | `retryBaseDelay` | `number` | `1000` | Shorthand for `retry.initialDelay` (ms) |
-| `retry` | `object` | — | Retry sub-object: `{ maxRetries, initialDelay, backoffMultiplier }` |
+| `retry` | `object` | -- | Retry sub-object: `{ maxRetries, initialDelay, backoffMultiplier }` |
 | `retry.maxRetries` | `number` | `3` | Max retry attempts for HTTP network errors |
 | `retry.initialDelay` | `number` | `1000` | Initial retry delay in ms |
 | `retry.backoffMultiplier` | `number` | `2` | Exponential backoff multiplier |
-| `rateLimiting` | `object` | — | Rate limiting sub-object |
+| `rateLimiting` | `object` | -- | Rate limiting sub-object |
 | `rateLimiting.autoRetry` | `boolean` | `true` | Automatically retry after a 429 response |
 | `rateLimiting.maxRetries` | `number` | `3` | Max 429 auto-retries |
 | `rateLimiting.showMessage` | `boolean` | `true` | Show rate-limit message toast |
 | `rateLimiting.messageText` | `string` | `'Too many requests...'` | Message text shown when rate-limited |
-| `auth` | `object` | — | Auth state detection sub-object |
+| `auth` | `object` | -- | Auth state detection sub-object |
 | `auth.loginUrl` | `string` | `'/login'` | URL to redirect to after 401/419 (when `autoRedirect: true`) |
 | `auth.autoRedirect` | `boolean` | `false` | Automatically redirect to `loginUrl` on session expiry |
 | `auth.showMessage` | `boolean` | `true` | Show session-expired message toast |
 | `auth.messageText` | `string` | `'Your session has expired...'` | Message text shown on session expiry |
 | `auth.messageTimeout` | `number` | `5000` | Duration (ms) before the message disappears |
-| `offline` | `object \| false` | — | Offline degradation sub-object (`false` to disable entirely) |
+| `offline` | `object \| false` | -- | Offline degradation sub-object (`false` to disable entirely) |
 | `offline.mode` | `'queue' \| 'fail' \| function` | `'queue'` | How to handle actions while offline |
 | `offline.queueMaxSize` | `number` | `50` | Max queued actions before oldest is dropped |
 | `offline.offlineIndicator` | `boolean` | `true` | Show built-in offline toast |
-| `redirect` | `object` | — | Redirect security sub-object |
+| `redirect` | `object` | -- | Redirect security sub-object |
 | `redirect.allowedDomains` | `string[]` | `[]` | Allowed external redirect hostnames (supports `*.wildcard`) |
 | `redirect.allowExternal` | `boolean` | `false` | Allow all external redirects (disables domain whitelist) |
 | `redirect.logBlocked` | `boolean` | `false` | Log blocked redirects to console and debug panel |
-| `debug` | `object` | — | Debug panel sub-object |
+| `debug` | `object \| string` | -- | Debug panel sub-object (or string shorthand for logLevel) |
 | `debug.thresholds.response` | `number` | `500` | TTFB > this ms shows yellow warning in debug panel |
 | `debug.thresholds.domMorph` | `number` | `100` | DOM morph > this ms shows orange warning |
 | `debug.thresholds.total` | `number` | `1000` | Total operation > this ms shows red warning |
 | `debug.logLevel` | `'off' \| 'info' \| 'verbose'` | auto | Console logging verbosity |
 
-**Configuration changes dispatch `gale:config-changed` on `document`.** Unknown keys emit `console.warn`. Invalid values emit `console.error` and retain the previous value.
+**Validation behavior:** Configuration changes dispatch `gale:config-changed` on `document`. Unknown keys emit `console.warn` and are ignored. Invalid values emit `console.error` and retain the previous value. Calling `configure()` with the same values as current emits no event.
+
+**String shorthand for debug:** `Alpine.gale.configure({ debug: 'verbose' })` is equivalent to `{ debug: { logLevel: 'verbose' } }`.
 
 **Example:**
 
@@ -1008,7 +1150,7 @@ Alpine.gale.configure({
 
 ## Events Reference
 
-Alpine Gale dispatches `CustomEvent`s on `document` (or on specific elements) throughout its lifecycle. Listen with `document.addEventListener('gale:event-name', handler)` or use Alpine's `@gale:event-name` shorthand on elements.
+Alpine Gale dispatches `CustomEvent`s on `document` (or on specific elements as noted) throughout its lifecycle. Listen with `document.addEventListener('gale:event-name', handler)` or use Alpine's `@gale:event-name.window` shorthand on elements.
 
 ### Request Lifecycle
 
@@ -1017,20 +1159,23 @@ Alpine Gale dispatches `CustomEvent`s on `document` (or on specific elements) th
 | `gale:started` | `document` | `{ el }` | Request begins (any Gale request) |
 | `gale:finished` | `document` | `{ el }` | Request completes successfully |
 | `gale:retrying` | `document` | `{ message }` | Request is being retried |
-| `gale:retries-failed` | `document` | — | All retry attempts exhausted |
+| `gale:retries-failed` | `document` | -- | All retry attempts exhausted |
 
 ### Error Events
 
 | Event | Dispatched on | Detail | When |
 |-------|---------------|--------|------|
-| `gale:error` | `document` | `{ type, status, message, context, recoverable }` | Any error (all types) |
+| `gale:error` | `document` | `{ type, status, message, context, recoverable }` | Any error (generic, always fires first) |
 | `gale:network-error` | `document` | `{ type, status, message, context, recoverable }` | Network/connectivity failure |
 | `gale:server-error` | `document` | `{ type, status, message, context, recoverable }` | HTTP 4xx/5xx response |
 | `gale:parse-error` | `document` | `{ type, status, message, context, recoverable }` | Malformed JSON or SSE data |
 | `gale:timeout` | `document` | `{ type, status, message, context, recoverable }` | Request timed out |
-| `gale:security-error` | `document` | `{ reason }` | Security error (checksum failure, etc.) |
-| `gale:patch-error` | `document` | `{ selector, mode, html }` | DOM patch failed (element not found) |
-| `gale:patch-warning` | `document` | `{ selector, mode, html }` | DOM patch warning (multiple matches) |
+| `gale:security-error` | `document` | `{ reason }` | Security error (checksum failure, HMAC mismatch) |
+| `gale:error-detail` | `document` | Full error context with stack | Non-recoverable error (dev mode, triggers error overlay) |
+| `gale:patch-error` | `document` | `{ selector, mode, html }` | DOM patch failed (target element not found) |
+| `gale:patch-warning` | `document` | `{ selector, mode, html }` | DOM patch warning (multiple elements matched selector) |
+
+> **Error dispatch order:** `gale:error` always fires first (generic), then the type-specific sub-event fires (e.g. `gale:network-error`). Both dispatch on `document` with `bubbles: false`.
 
 ### Navigation Events
 
@@ -1045,8 +1190,8 @@ Alpine Gale dispatches `CustomEvent`s on `document` (or on specific elements) th
 |-------|---------------|--------|------|
 | `gale:before-morph` | `document` | `{ el, newHtml }` | Before any morphing begins for an element |
 | `gale:after-morph` | `document` | `{ el }` | After all morphing completes for an element |
-| `gale:before-remove` | element | `{ el, component }` | Element is about to be removed during morph |
-| `gale:after-add` | element | `{ el, component }` | Element was newly added to DOM during morph |
+| `gale:before-remove` | element | `{ el, component }` | Element is about to be removed during morph (bubbles) |
+| `gale:after-add` | element | `{ el, component }` | Element was newly added to DOM during morph (bubbles) |
 | `gale:swap-start` | `document` | `{ el }` | DOM swap begins (swap-settle lifecycle) |
 | `gale:settle-start` | `document` | `{ el }` | Settle phase begins |
 | `gale:settle-complete` | `document` | `{ el }` | Settle phase complete |
@@ -1055,9 +1200,9 @@ Alpine Gale dispatches `CustomEvent`s on `document` (or on specific elements) th
 
 | Event | Dispatched on | Detail | When |
 |-------|---------------|--------|------|
-| `gale:csrf-rotated` | `document` | `{ token }` | CSRF token was refreshed |
-| `gale:csrf-missing` | `document` | — | No CSRF token source was found |
-| `gale:csrf-exhausted` | `document` | — | CSRF refresh failed after all retries |
+| `gale:csrf-rotated` | `document` | `{ token }` | CSRF token was refreshed (new token received from server) |
+| `gale:csrf-missing` | `document` | -- | No CSRF token source was found (no cookie, no meta tag) |
+| `gale:csrf-exhausted` | `document` | -- | CSRF refresh retry chain failed after all attempts |
 
 ### Rate Limiting Events
 
@@ -1077,7 +1222,7 @@ Alpine Gale dispatches `CustomEvent`s on `document` (or on specific elements) th
 | Event | Dispatched on | Detail | When |
 |-------|---------------|--------|------|
 | `gale:offline` | `document` | `{ previouslyOnline }` | Browser went offline |
-| `gale:online` | `document` | `{ queueSize }` | Browser came back online |
+| `gale:online` | `document` | `{ queueSize }` | Browser came back online (queued actions replayed) |
 
 ### Component Registry Events
 
@@ -1085,7 +1230,15 @@ Alpine Gale dispatches `CustomEvent`s on `document` (or on specific elements) th
 |-------|---------------|--------|------|
 | `gale:component-registered` | `document` | `{ name, el, tags }` | Component registered via `x-component` |
 | `gale:component-unregistered` | `document` | `{ name, el }` | Component removed from registry |
-| `gale:state-created` | element | `{ name, state }` | State namespace created via `x-name` |
+
+### Form & Input Events
+
+| Event | Dispatched on | Detail | When |
+|-------|---------------|--------|------|
+| `gale:state-created` | element | `{ name, state }` | State namespace created via `x-name` auto-creation |
+| `gale:validation-failed` | `document` | `{ fields }` | HTML5 form validation blocked a request |
+| `gale:file-change` | input element | `{ name, files }` | Files selected or changed |
+| `gale:file-error` | input element | `{ name, error }` | File validation error (type/size) |
 
 ### Redirect Events
 
@@ -1104,20 +1257,23 @@ Alpine Gale dispatches `CustomEvent`s on `document` (or on specific elements) th
 
 | Event | Dispatched on | Detail | When |
 |-------|---------------|--------|------|
-| `gale:rollback` | element | `{ rolledBack, snapshot }` | Optimistic state rolled back on error |
+| `gale:rollback` | element | `{ rolledBack, snapshot }` | Optimistic state rolled back after request error |
 
-### Validation Events
-
-| Event | Dispatched on | Detail | When |
-|-------|---------------|--------|------|
-| `gale:validation-failed` | `document` | `{ fields }` | HTML5 form validation blocked a request |
-
-### File Events
+### Third-Party Compatibility Events
 
 | Event | Dispatched on | Detail | When |
 |-------|---------------|--------|------|
-| `gale:file-change` | input element | `{ name, files }` | Files selected or changed |
-| `gale:file-error` | input element | `{ name, error }` | File validation error (type/size) |
+| `gale:animation-morph-complete` | element | `{ el }` | GSAP/animation morph cycle complete; safe to reinitialize |
+| `gale:rte-destroy` | element | `{ el }` | Rich text editor destroyed during morph cleanup |
+| `gale:sortable-drop` | container element | `{ order, el }` | SortableJS drop detected; `order` is the new item order array |
+
+### SSE Connection Events
+
+| Event | Dispatched on | Detail | When |
+|-------|---------------|--------|------|
+| `gale:html-fallback` | -- | -- | SSE connection received HTML instead of event stream |
+| `gale:visibility-paused` | -- | -- | SSE connection paused due to tab hidden |
+| `gale:visibility-resumed` | -- | -- | SSE connection resumed after tab visible |
 
 ### Configuration Events
 
@@ -1125,13 +1281,7 @@ Alpine Gale dispatches `CustomEvent`s on `document` (or on specific elements) th
 |-------|---------------|--------|------|
 | `gale:config-changed` | `document` | `{ changes }` | `Alpine.gale.configure()` applied a change |
 
-### Debug Events (dev mode only)
-
-| Event | Dispatched on | Detail | When |
-|-------|---------------|--------|------|
-| `gale:error-detail` | `document` | Full error context with stack | Non-recoverable error (dev mode overlay) |
-
-**Listening example:**
+**Listening examples:**
 
 ```javascript
 // Listen for any Gale error
@@ -1145,42 +1295,81 @@ document.addEventListener('gale:auth-expired', () => {
     Alpine.store('ui').showLoginModal = true;
 });
 
-// Listen for offline event in an Alpine component
+// Listen in an Alpine component
 ```
 
 ```html
-<div x-data x-init="
+<div x-data="{ offline: false }" x-init="
     document.addEventListener('gale:offline', () => { offline = true });
     document.addEventListener('gale:online', () => { offline = false });
-" :data-offline="offline">
+">
+    <div x-show="offline">You are offline</div>
+</div>
 ```
 
 ---
 
 ## Alpine.gale API
 
-The `Alpine.gale` namespace exposes utility methods beyond configuration.
+The `Alpine.gale` namespace exposes utility methods, configuration APIs, and lifecycle hooks beyond `configure()`.
+
+### Configuration APIs
+
+```javascript
+// Global config
+Alpine.gale.configure(options)           // Set global configuration options
+Alpine.gale.getConfig()                  // Get current config (shallow copy)
+Alpine.gale.getMaxConcurrent()           // Get max concurrent request count
+
+// CSRF
+Alpine.gale.configureCsrf(options)       // Configure CSRF settings
+Alpine.gale.getCsrfConfig()             // Get current CSRF configuration
+
+// Navigation
+Alpine.gale.configureNavigation(options)  // Configure SPA navigation
+Alpine.gale.getNavigationConfig()        // Get current navigation configuration
+
+// Message directive
+Alpine.gale.configureMessage(options)     // Configure x-message directive
+Alpine.gale.getMessageConfig()           // Get current message configuration
+
+// Confirmation dialogs
+Alpine.gale.configureConfirm(options)     // Configure x-confirm defaults
+Alpine.gale.getConfirmConfig()           // Get current confirm configuration
+
+// Swap-settle timing
+Alpine.gale.configureSwapSettle(options)  // Configure DOM swap-settle lifecycle
+Alpine.gale.getSwapSettleConfig()        // Get current swap-settle configuration
+
+// Error notifications
+Alpine.gale.configureErrors(options)      // Configure error notification behavior
+Alpine.gale.getErrorConfig()             // Get current error notification config
+
+// Push channels
+Alpine.gale.configurePushChannels(options) // Configure push channel endpoint prefix
+Alpine.gale.getPushChannelConfig()        // Get current push channel configuration
+```
 
 ### Component Registry
 
 ```javascript
-Alpine.gale.registerComponent(name, el)           // Manually register an element
-Alpine.gale.unregisterComponent(name)             // Unregister by name
-Alpine.gale.getComponent(name)                    // Get component data by name
-Alpine.gale.getComponentsByTag(tag)               // Get all components with a tag
-Alpine.gale.updateComponentState(name, updates)   // Apply JSON Merge Patch to state
-Alpine.gale.invokeComponentMethod(name, method)   // Call a method on a component
-Alpine.gale.hasComponent(name)                    // Boolean existence check
-Alpine.gale.getAllComponents()                    // Array of all component data objects
-Alpine.gale.getComponentState(name, key?)         // Get reactive state (or a key)
-Alpine.gale.createComponentState(name, state)     // Initialize a state namespace
-Alpine.gale.deleteComponentState(name, keys)      // Delete state properties
-Alpine.gale.watchComponentState(name, cb)         // Watch all state changes
-Alpine.gale.onComponentRegistered(cb)             // Lifecycle: on registration
-Alpine.gale.onComponentUnregistered(cb)           // Lifecycle: on unregistration
-Alpine.gale.onComponentStateChanged(cb)           // Lifecycle: on state change
-Alpine.gale.whenComponentReady(name, timeout?)    // Promise resolving when ready
-Alpine.gale.onComponentReady(names, cb)           // Callback when ready
+Alpine.gale.registerComponent(name, el)            // Manually register an element
+Alpine.gale.unregisterComponent(name)              // Unregister by name
+Alpine.gale.getComponent(name)                     // Get component data by name
+Alpine.gale.getComponentsByTag(tag)                // Get all components with a tag
+Alpine.gale.updateComponentState(name, updates)    // Apply JSON Merge Patch to state
+Alpine.gale.invokeComponentMethod(name, method)    // Call a method on a component
+Alpine.gale.hasComponent(name)                     // Boolean existence check
+Alpine.gale.getAllComponents()                     // Array of all component data objects
+Alpine.gale.getComponentState(name, key?)          // Get reactive state (or a key)
+Alpine.gale.createComponentState(name, state)      // Initialize a state namespace
+Alpine.gale.deleteComponentState(name, keys)       // Delete state properties
+Alpine.gale.watchComponentState(name, cb)          // Watch all state changes
+Alpine.gale.onComponentRegistered(cb)              // Lifecycle: on registration
+Alpine.gale.onComponentUnregistered(cb)            // Lifecycle: on unregistration
+Alpine.gale.onComponentStateChanged(cb)            // Lifecycle: on state change
+Alpine.gale.whenComponentReady(name, timeout?)     // Promise resolving when ready
+Alpine.gale.onComponentReady(names, cb)            // Callback when ready
 ```
 
 ### Morph Lifecycle Hooks
@@ -1195,11 +1384,11 @@ const unregister = Alpine.gale.onMorph({
     afterAdd(el)            { /* initialize newly added element */ },
 });
 
-// Unregister when done
+// Unregister when done (idempotent)
 unregister();
 ```
 
-> Hook callbacks run outside Alpine reactive context. Never use `$nextTick`, `$el`, or other Alpine magics inside them. Capture `const self = $data` in `x-init` before registering if you need to update component state from a hook.
+> Hook callbacks run outside Alpine reactive context. Never use `$nextTick`, `$el`, or other Alpine magics inside them. Capture `const self = $data` in `x-init` before registering if you need to update component state from a hook. Hook errors are caught and logged without interrupting the morph.
 
 ### Error Handling
 
@@ -1224,9 +1413,10 @@ Alpine.gale.registerPlugin('my-plugin', {
     destroy()                   { /* cleanup on unregister */ },
 });
 
-Alpine.gale.unregisterPlugin('my-plugin');
-Alpine.gale.getPlugin('my-plugin');
-Alpine.gale.getPluginNames();  // string[]
+Alpine.gale.unregisterPlugin('my-plugin');   // Remove + call destroy
+Alpine.gale.getPlugin('my-plugin');          // Get plugin object by name
+Alpine.gale.getPluginNames();                // string[] of registered names
+Alpine.gale.getPluginCount();                // Number of registered plugins
 ```
 
 ### Custom Directives
@@ -1247,6 +1437,9 @@ Alpine.gale.directive('tooltip', {
     },
 });
 // Usage: <div x-tooltip="'Click me'">
+
+Alpine.gale.getCustomDirectiveNames();     // string[] of registered names
+Alpine.gale.getCustomDirectiveCount();     // Number of registered directives
 ```
 
 > The `x-` prefix is added automatically. The directive name must not include it.
@@ -1267,6 +1460,7 @@ Alpine.gale.removeCleanup('[data-chart]');
 // GSAP convenience registration
 Alpine.gale.registerGsapCleanup('[data-gsap]');
 Alpine.gale.setupAnimationCompat();
+Alpine.gale.waitForElementTransition(el);    // Promise: await CSS transition (500ms timeout)
 
 // Rich text editor convenience registration
 Alpine.gale.registerRteCleanup('[data-editor]');
@@ -1275,6 +1469,7 @@ Alpine.gale.setupRteCompat();
 // SortableJS convenience registration
 Alpine.gale.registerSortableCleanup('[data-sortable]');
 Alpine.gale.setupSortableCompat();
+Alpine.gale.installSortableHandlers(el, sortableInstance);  // Install drop/order-sync listeners
 ```
 
 ### Cache Management
@@ -1290,6 +1485,7 @@ Alpine.gale.getHistoryCacheKeys();        // Array of cached URLs
 Alpine.gale.clearPrefetchCache();         // Clear all prefetched pages
 Alpine.gale.getPrefetchCacheSize();       // Number of prefetched pages
 Alpine.gale.getPrefetchCacheKeys();       // Array of prefetched URLs
+Alpine.gale.getPrefetchConfig();          // Get current prefetch configuration
 
 // HTTP response cache
 Alpine.gale.clearCache();                 // Clear all cached responses
@@ -1298,27 +1494,42 @@ Alpine.gale.getResponseCacheSize();       // Number of cached responses
 Alpine.gale.getResponseCacheKeys();       // Array of cached URLs
 ```
 
+### Request Pipeline
+
+```javascript
+Alpine.gale.getPipelineStats()           // { pending, active, completed, maxConcurrent }
+Alpine.gale.getQueueStats()              // Queue manager stats: { queued, processing }
+Alpine.gale.PIPELINE_PRIORITY            // Priority constants: { LOW, NORMAL, HIGH, CRITICAL }
+```
+
 ### Dirty State API
 
 ```javascript
-Alpine.gale.isDirty(el, key?)        // boolean — is el (or key) dirty?
-Alpine.gale.getDirtyKeys(el)         // Set<string> — dirty key names
+Alpine.gale.isDirty(el, key?)        // boolean -- is el (or key) dirty?
+Alpine.gale.getDirtyKeys(el)         // Set<string> -- dirty key names
 Alpine.gale.resetDirty(el)           // Manually reset dirty tracking
 Alpine.gale.initDirtyTracking(el)    // Bootstrap dirty tracking for an element
+```
+
+### Optimistic UI API
+
+```javascript
+Alpine.gale.isOptimistic(el)                // boolean -- has pending optimistic state?
+Alpine.gale.getPendingOptimisticCount(el)    // number -- count of pending optimistic actions
 ```
 
 ### Offline API
 
 ```javascript
-Alpine.gale.isOnline()              // boolean — current connectivity state
-Alpine.gale.getOfflineQueueSize()   // number — queued actions count
+Alpine.gale.isOnline()              // boolean -- current connectivity state
+Alpine.gale.getOfflineQueueSize()   // number -- queued actions count
 Alpine.gale.clearOfflineQueue()     // Discard queued actions without replay
 ```
 
 ### Authentication API
 
 ```javascript
-Alpine.gale.isAuthExpired()   // boolean — has session expiry been detected?
+Alpine.gale.isAuthExpired()   // boolean -- has session expiry been detected?
 Alpine.gale.resetAuth()       // Reset auth state after re-authentication
 ```
 
@@ -1338,7 +1549,26 @@ Alpine.gale.getSharedConnectionCount()   // Number of shared connections
 Alpine.gale.getConnectionStates()        // [{ url, state }] for all connections
 ```
 
+### Push Channel API
+
+```javascript
+Alpine.gale.getActiveChannelCount()      // Number of active push subscriptions
+Alpine.gale.getActiveChannelNames()      // Array of subscribed channel names
+```
+
+### Security API
+
+```javascript
+Alpine.gale.getCspNonce()                // string | null -- current CSP nonce
+Alpine.gale.validateSSEEvent(event)      // { valid: boolean, reason?: string }
+Alpine.gale.validateRedirectUrl(url)     // boolean -- is redirect allowed?
+Alpine.gale.configureRedirect(options)   // Configure redirect security at runtime
+Alpine.gale.getRedirectConfig()          // Get current redirect security config
+```
+
 ### Debug Panel API (dev mode)
+
+These methods are no-ops in production builds (stripped by the build plugin).
 
 ```javascript
 Alpine.gale.debug.toggle()              // Toggle panel open/closed
@@ -1351,12 +1581,18 @@ Alpine.gale.debug.registerTab(id, label)  // Register a custom tab
 Alpine.gale.debug.pushTab(id, entry)   // Push entry to custom tab
 Alpine.gale.debug.clear()              // Clear all entries
 Alpine.gale.debug.isEnabled()          // Whether debug mode is active
+
+Alpine.gale.showErrorOverlay(error)     // Show the error overlay (dev mode only)
+
+Alpine.gale.getLogLevel()               // 'off' | 'info' | 'verbose'
+Alpine.gale.setLogLevel(level)          // Set console logging level
 ```
 
 ### Teardown
 
 ```javascript
-// Remove all MutationObservers and global event listeners registered by Gale.
+// Remove all MutationObservers, global event listeners, SSE connections,
+// caches, timers, and cleanup registrations established by Gale.
 // Useful for SSR, plugin re-initialization, and test isolation.
 Alpine.gale.teardown();
 ```
@@ -1369,4 +1605,3 @@ Alpine.gale.teardown();
 - Read [Forms, Validation & Uploads](forms-validation-uploads.md) for form patterns, validation, and file uploads
 - Read [Components, Events & Polling](components-events-polling.md) for cross-component communication and polling
 - Read [Backend API Reference](backend-api.md) for the server-side PHP API
-- Read [Debug & Troubleshooting](debug-troubleshooting.md) for debug panel and common issues

@@ -64,6 +64,17 @@ class GaleMorphMarkers
     public const BLOCK_END = '<!--[if ENDBLOCK]><![endif]-->';
 
     /**
+     * Guard flag to prevent double-registration of the Blade precompiler.
+     *
+     * The GaleServiceProvider uses a dual-registration strategy (immediate +
+     * callAfterResolving) to handle race conditions during Blade compiler
+     * initialization. Without this guard, both registrations succeed and the
+     * precompiler runs twice — producing double BLOCK markers that break
+     * Alpine.morph's block-diffing algorithm.
+     */
+    protected static bool $registered = false;
+
+    /**
      * Blade directives to wrap with morph markers.
      *
      * Key = opening directive, Value = closing directive.
@@ -95,6 +106,12 @@ class GaleMorphMarkers
      */
     public static function register(): void
     {
+        if (static::$registered) {
+            return;
+        }
+
+        static::$registered = true;
+
         Blade::precompiler(function (string $template): string {
             return static::compile($template);
         });
@@ -103,22 +120,26 @@ class GaleMorphMarkers
     /**
      * Compile a Blade template source string by injecting morph markers.
      *
-     * NOTE: Laravel 12's Blade compiler already injects Alpine.morph-native block markers
-     * (<!--[if BLOCK]><![endif]--> and <!--[if ENDBLOCK]><![endif]-->) for @if, @foreach,
+     * Scans for Blade conditional/loop directives (@if, @foreach, @switch, @forelse,
      *
-     * @switch, @forelse, @unless, @isset, @auth, @guest, @while, and @for directives
-     * via SupportMorphAwareBladeCompilation (Livewire integration in Laravel core).
+     * @unless, @isset, @auth, @guest, @while, @for) and wraps each block with
+     * Alpine.morph-native BLOCK/ENDBLOCK comment markers.
      *
-     * Running our own precompiler on top would produce DOUBLE markers (3× BLOCK_START, 2×
-     * BLOCK_END), which breaks Alpine.morph's block-diffing algorithm. So we return the
-     * template unchanged here — Blade handles the marker injection natively.
+     * The precompiler runs on the raw template source BEFORE Blade compiles directives
+     * to PHP. It inserts literal HTML comment strings that survive compilation and
+     * appear in the rendered output, providing stable anchor points for Alpine.morph's
+     * block-level diffing algorithm.
      *
-     * The BLOCK_START / BLOCK_END constants remain useful for PHP controllers that build
+     * Directives inside <script>, <style>, <code>, <pre> tags and Blade comments
+     * ({{-- --}}) are excluded. Directives inside HTML tag attributes are also
+     * excluded to prevent injecting comments as attribute values.
+     *
+     * The BLOCK_START / BLOCK_END constants are also used by PHP controllers that build
      * HTML strings manually (e.g. outerMorph() responses) where Blade is not involved.
      *
      * @param string $template Raw Blade template source
      *
-     * @return string Unchanged template (Blade handles markers natively in Laravel 12)
+     * @return string Template with morph markers injected around directive blocks
      */
     public static function compile(string $template): string
     {

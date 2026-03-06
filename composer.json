@@ -1,6 +1,6 @@
 {
   "name": "dancycodes/gale",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Laravel-native reactive frontends using Alpine Gale. Build dynamic UIs with Blade templates and Server-Sent Events.",
   "keywords": [
     "laravel",
