@@ -12,6 +12,7 @@ Complete PHP API reference for the Gale package. Covers the `gale()` helper, eve
 - [Response Building](#response-building)
   - [View & HTML](#view--html)
   - [State Management](#state-management)
+  - [Components & Stores](#components--stores)
   - [DOM Patching](#dom-patching)
   - [Events & JavaScript](#events--javascript)
   - [Navigation](#navigation)
@@ -22,6 +23,7 @@ Complete PHP API reference for the Gale package. Covers the `gale()` helper, eve
   - [Conditionals & Flow Control](#conditionals--flow-control)
   - [Hooks & Pipeline](#hooks--pipeline)
   - [Response Finalization](#response-finalization)
+  - [Static Utilities](#static-utilities)
 - [Fragment System](#fragment-system)
 - [Blade Directives](#blade-directives)
 - [Request Macros](#request-macros)
@@ -39,9 +41,9 @@ Complete PHP API reference for the Gale package. Covers the `gale()` helper, eve
 gale(): \Dancycodes\Gale\Http\GaleResponse
 ```
 
-Returns the **request-scoped** `GaleResponse` singleton from the Laravel container. The same instance is returned across multiple calls within a single request, so events accumulate correctly. The instance is automatically reset at the start of each new request.
+Returns the **request-scoped** `GaleResponse` instance from the Laravel container. The same instance is returned across multiple calls within a single request, so events accumulate correctly. The instance is automatically reset at the start of each new request.
 
-**Singleton behavior:** Because `gale()` uses `app()->scoped()`, calling `gale()` five times in one controller returns the exact same object every time. Events added in one call are present when you call `toResponse()`.
+**Scoped binding:** Because `gale()` uses `app()->scoped()`, calling `gale()` five times in one controller returns the exact same object every time. Events added in one call are present when you call `toResponse()`. A fresh instance is created for each new request (safe for Octane/Swoole/RoadRunner).
 
 ```php
 // All three calls operate on the same instance
@@ -56,7 +58,7 @@ return gale()->fragment('checkout', 'step-form', $data);
 
 ## Response Building
 
-All fluent methods return `static` (the same `GaleResponse` instance) unless otherwise noted, allowing method chaining. Methods that return a non-`GaleResponse` value are marked accordingly.
+All fluent methods return `static` (the same `GaleResponse` instance) unless otherwise noted, allowing method chaining. Methods that return a different type are marked accordingly.
 
 ### View & HTML
 
@@ -68,12 +70,12 @@ Renders a full Blade view and sends its HTML as a `gale-patch-elements` event.
 |-----------|------|-------------|
 | `$view` | `string` | Blade view name in dot notation |
 | `$data` | `array` | Variables to pass to the view |
-| `$options` | `array` | DOM patching options (see [DOM Patching](#dom-patching)) |
+| `$options` | `array` | DOM patching options (see [DOM Patching Options](#dom-patching-options)) |
 | `$web` | `bool` | When `true`, also sets this view as the fallback for non-Gale requests |
 
 ```php
 // Gale request: renders and patches the view into the DOM
-// Non-Gale request: returns a 204 (no content)
+// Non-Gale request: returns 204 No Content
 return gale()->view('dashboard', ['stats' => $stats]);
 
 // With web fallback for direct URL access
@@ -86,7 +88,7 @@ return gale()->view('dashboard', ['stats' => $stats], web: true);
 
 #### `fragment(string $view, string $fragment, array $data = [], array $options = []): static`
 
-Extracts and renders a named `@fragment` block from a Blade view. **Only the fragment is compiled — the full view is never rendered.** This is the correct method for granular UI updates.
+Extracts and renders a named `@fragment` block from a Blade view. **Only the fragment is compiled -- the full view is never rendered.** This is the correct method for granular UI updates.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
@@ -101,11 +103,11 @@ Extracts and renders a named `@fragment` block from a Blade view. **Only the fra
 // <ul id="task-list"> ... </ul>
 // @endfragment
 
-// In the controller — only the fragment is compiled:
+// In the controller -- only the fragment is compiled:
 return gale()->fragment('tasks.list', 'task-list', ['tasks' => $tasks]);
 ```
 
-> **How pre-rendering extraction works:** Gale reads the raw template file, uses a regex to locate the `@fragment('task-list')` ... `@endfragment` block, extracts just that text, and passes it to `Blade::render()`. The surrounding view template is never compiled. This means you only pass data that the fragment actually needs — no dummy values for variables used elsewhere in the view.
+> **How pre-rendering extraction works:** Gale reads the raw template file, locates the `@fragment('task-list')` ... `@endfragment` block using a parser, extracts just that text, and passes it to `Blade::render($fragmentText, $data)` for compilation. The surrounding view template is never compiled. You only pass data that the fragment actually uses -- no dummy values for variables elsewhere in the view.
 
 ---
 
@@ -119,6 +121,8 @@ return gale()->fragments([
     ['view' => 'tasks.list', 'fragment' => 'task-count', 'data' => ['count' => $count]],
 ]);
 ```
+
+Each entry in the array must have `view` and `fragment` keys. `data` and `options` are optional.
 
 ---
 
@@ -151,11 +155,17 @@ return gale()->state('step', 2)->state('error', null);
 
 **RFC 7386 semantics:** `null` values delete the key on the client. Missing keys are left unchanged. Nested objects are merged shallowly (top-level keys only).
 
+**Options:**
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `onlyIfMissing` | `bool` | When `true`, the state is only applied if the key does not already exist on the client |
+
 ---
 
 #### `messages(array $messages): static`
 
-Sets the `messages` state key — the reactive message store read by `x-message` directives.
+Sets the `messages` state key -- the reactive message store read by `x-message` directives.
 
 ```php
 gale()->messages(['email' => 'This email is already taken.', 'name' => 'Name is required.']);
@@ -175,7 +185,7 @@ return gale()->clearMessages()->state('success', true);
 
 #### `errors(array $errors): static`
 
-Sets the `errors` state key with Laravel-style field-error arrays. Each field maps to an array of error strings.
+Sets the `errors` state key with Laravel-style field-error arrays. Each field maps to an array of error strings. This is the format produced by `$request->validate()` auto-conversion.
 
 ```php
 gale()->errors(['email' => ['The email field is required.', 'Must be a valid email.']]);
@@ -204,6 +214,9 @@ gale()->flash('success', 'Record saved!');
 
 // Array form
 gale()->flash(['success' => 'Saved', 'count' => 5]);
+
+// Chainable with other methods
+gale()->flash('success', 'Saved')->state('count', 42);
 ```
 
 **Frontend display (add `_flash: {}` to `x-data`):**
@@ -211,45 +224,93 @@ gale()->flash(['success' => 'Saved', 'count' => 5]);
 <div x-show="_flash.success" x-text="_flash.success"></div>
 ```
 
+For non-Gale requests, `flash()` still writes to the Laravel session so server-rendered pages can display flash data via `session('key')`.
+
 ---
 
-#### `forget(string|array $state): static`
+#### `forget(string|array|null $state = null): static`
 
-Removes one or more state keys from the client-side Alpine component.
+Removes one or more state keys from the client-side Alpine component using RFC 7386 `null` deletion.
 
 ```php
 gale()->forget('tempData');
 gale()->forget(['tempData', 'draft']);
 ```
 
-> **Note:** `messages` and `errors` are reset to `[]` instead of `null` when forgotten, because `x-message` expects an array.
+> **Note:** `messages` and `errors` are reset to `[]` instead of `null` when forgotten, because `x-message` expects an array. Calling `forget(null)` is a no-op.
 
 ---
+
+### Components & Stores
 
 #### `patchStore(string $storeName, array $data): static`
 
 Patches an Alpine global store (`Alpine.store()`) using RFC 7386 Merge Patch semantics. The store must be registered on the frontend before calling this.
 
 ```php
+// Patch a single store
 return gale()->patchStore('cart', ['total' => 149.99, 'itemCount' => 3]);
+
+// Patch multiple stores in one response
+return gale()->patchStore('cart', ['total' => 42])->patchStore('notifications', ['unread' => 3]);
+```
+
+---
+
+#### `componentState(string $componentName, array $state, array $options = []): static`
+
+Patches the Alpine state of a named component registered with `x-component`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `$componentName` | `string` | Name from the `x-component` attribute |
+| `$state` | `array` | State updates (RFC 7386 merge patch) |
+| `$options` | `array` | Options: `onlyIfMissing` (bool) |
+
+```php
+gale()->componentState('cart', ['total' => 149.99, 'itemCount' => 3]);
+```
+
+---
+
+#### `tagState(string $tag, array $state): static`
+
+Patches the state of **all** components sharing a tag (set via `data-tags` attribute on `x-component`).
+
+```php
+gale()->tagState('product-card', ['inStock' => false]);
+```
+
+---
+
+#### `componentMethod(string $componentName, string $method, array $args = []): static`
+
+Invokes a method on a named component's Alpine `x-data` object.
+
+```php
+gale()->componentMethod('modal', 'open', ['title' => 'Confirm Delete']);
 ```
 
 ---
 
 ### DOM Patching
 
-All DOM patching methods use the `gale-patch-elements` SSE event. The `$options` array supports:
+All DOM patching methods use the `gale-patch-elements` event type internally.
+
+#### DOM Patching Options
+
+The `$options` array accepted by `view()`, `fragment()`, `html()`, and all DOM convenience methods:
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `selector` | `string` | — | CSS selector targeting elements in the DOM |
+| `selector` | `string` | -- | CSS selector targeting elements in the DOM |
 | `mode` | `string` | `'outer'` | Patching mode (see modes below) |
 | `useViewTransition` | `bool` | `false` | Wrap the DOM update in a View Transition |
-| `settle` | `int` | — | Milliseconds to wait before applying classes |
-| `scroll` | `string` | — | CSS selector to scroll into view after patch |
-| `show` | `string` | — | CSS selector to show after patch |
+| `settle` | `int` | -- | Milliseconds to wait before applying classes |
+| `scroll` | `string` | -- | CSS selector to scroll into view after patch |
+| `show` | `string` | -- | CSS selector to show after patch |
 | `focusScroll` | `bool` | `false` | Scroll focused element into view |
-| `limit` | `int` | — | Max number of elements to patch |
+| `limit` | `int` | -- | Max number of elements to patch |
 
 **Patching modes:**
 
@@ -262,7 +323,7 @@ All DOM patching methods use the `gale-patch-elements` SSE event. The `$options`
 | `before` | Insert HTML as a sibling before the element |
 | `after` | Insert HTML as a sibling after the element |
 | `remove` | Remove the matched element |
-| `outerMorph` | Smart diff using `Alpine.morph()` — preserves client state |
+| `outerMorph` | Smart diff using `Alpine.morph()` -- preserves client state |
 | `innerMorph` | Smart diff children using `Alpine.morph()` |
 
 #### DOM Patching Convenience Methods
@@ -270,7 +331,7 @@ All DOM patching methods use the `gale-patch-elements` SSE event. The `$options`
 All methods are chainable and return `static`.
 
 ```php
-// Replace the outer HTML (default)
+// Replace the outer HTML (default mode)
 gale()->outer('#task-42', '<li id="task-42">Updated</li>');
 
 // Alias for outer()
@@ -297,13 +358,30 @@ gale()->remove('#task-42');
 // Alias for remove()
 gale()->delete('#task-42');
 
-// Smart morph — preserves Alpine state in matched elements
+// Smart morph -- preserves Alpine state in matched elements
 gale()->outerMorph('#task-list', $newListHtml);
 gale()->innerMorph('#task-list', $newChildrenHtml);
 
 // Alias for outerMorph() (v1 compatibility)
 gale()->morph('#task-list', $newListHtml);
 ```
+
+#### Method Signatures
+
+| Method | Signature |
+|--------|-----------|
+| `append` | `append(string $selector, string $html, array $options = []): static` |
+| `prepend` | `prepend(string $selector, string $html, array $options = []): static` |
+| `before` | `before(string $selector, string $html, array $options = []): static` |
+| `after` | `after(string $selector, string $html, array $options = []): static` |
+| `inner` | `inner(string $selector, string $html, array $options = []): static` |
+| `outer` | `outer(string $selector, string $html, array $options = []): static` |
+| `replace` | `replace(string $selector, string $html, array $options = []): static` |
+| `outerMorph` | `outerMorph(string $selector, string $html, array $options = []): static` |
+| `innerMorph` | `innerMorph(string $selector, string $html, array $options = []): static` |
+| `morph` | `morph(string $selector, string $html, array $options = []): static` |
+| `remove` | `remove(string $selector): static` |
+| `delete` | `delete(string $selector): static` |
 
 ---
 
@@ -315,7 +393,7 @@ Dispatches an Alpine-compatible `CustomEvent` on `window` (default) or on a spec
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `$eventName` | `string` | Event name (kebab-case recommended) |
+| `$eventName` | `string` | Event name (kebab-case recommended). Must not be empty. |
 | `$data` | `array` | Event payload accessible via `$event.detail` |
 | `$target` | `string\|null` | CSS selector for targeted dispatch; `null` = window |
 
@@ -325,6 +403,9 @@ gale()->dispatch('show-toast', ['message' => 'Saved!', 'type' => 'success']);
 
 // Dispatch on a specific element
 gale()->dispatch('refresh', [], '#sidebar');
+
+// Chaining multiple dispatches
+gale()->dispatch('cart-updated', ['total' => 99])->dispatch('notify', ['msg' => 'Item added']);
 ```
 
 **Alpine listener:**
@@ -332,20 +413,22 @@ gale()->dispatch('refresh', [], '#sidebar');
 <!-- Window event -->
 <div x-on:show-toast.window="showToast($event.detail)"></div>
 
-<!-- Element-specific -->
+<!-- Element-specific (no .window modifier needed) -->
 <div id="sidebar" x-on:refresh="loadItems()"></div>
 ```
+
+Throws `\InvalidArgumentException` when `$eventName` is empty.
 
 ---
 
 #### `js(string $script, array $options = []): static`
 
-Executes arbitrary JavaScript in the browser.
+Executes arbitrary JavaScript in the browser by emitting a `gale-execute-script` event.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `$script` | `string` | JavaScript code to execute |
-| `$options` | `array` | Options: `autoRemove` (bool, default `true`), `nonce` (string for CSP) |
+| `$options` | `array` | Options: `autoRemove` (bool, default `true`), `nonce` (string for CSP), `attributes` (array) |
 
 ```php
 gale()->js("document.title = 'Updated'");
@@ -354,35 +437,7 @@ gale()->js("console.log('debug')", ['autoRemove' => false]);
 
 > **Warning:** Use `dispatch()` for Alpine communication. Use `js()` only for direct DOM operations that have no Gale equivalent.
 
----
-
-#### `componentState(string $componentName, array $state, array $options = []): static`
-
-Patches the Alpine state of a named component registered with `x-component`.
-
-```php
-gale()->componentState('cart', ['total' => 149.99, 'itemCount' => 3]);
-```
-
----
-
-#### `tagState(string $tag, array $state): static`
-
-Patches the state of all components sharing a tag.
-
-```php
-gale()->tagState('product-card', ['inStock' => false]);
-```
-
----
-
-#### `componentMethod(string $componentName, string $method, array $args = []): static`
-
-Invokes a method on a named component's Alpine `x-data` object.
-
-```php
-gale()->componentMethod('modal', 'open', ['title' => 'Confirm Delete']);
-```
+> **CSP:** When your app uses a Content Security Policy, pass a nonce via `$options['nonce']` or configure `config('gale.csp_nonce')` globally.
 
 ---
 
@@ -390,7 +445,7 @@ gale()->componentMethod('modal', 'open', ['title' => 'Confirm Delete']);
 
 #### `navigate(string|array $url, string $key = 'true', array $options = []): static`
 
-Triggers SPA navigation via the Gale navigate system. Does NOT perform a full-page redirect.
+Triggers SPA navigation via the Gale navigate system. Does NOT perform a full-page redirect -- it uses `history.pushState` and the Gale navigate machinery.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
@@ -402,9 +457,24 @@ Triggers SPA navigation via the Gale navigate system. Does NOT perform a full-pa
 // Navigate to a URL
 gale()->navigate('/dashboard');
 
-// Navigate with query parameters
+// Navigate with query parameters (applied to current path)
 gale()->navigate(['page' => 2, 'sort' => 'name']);
 ```
+
+> **Note:** Only one `navigate()` call is allowed per response. Calling it a second time throws `\LogicException`.
+
+---
+
+#### `navigateWith(string|array $url, string $key = 'true', bool $merge = false, array $options = []): static`
+
+Navigate with explicit merge control. The `$merge` parameter controls whether new query parameters are merged with the current URL's query string.
+
+```php
+gale()->navigateWith('/products', merge: true);
+gale()->navigateWith(['page' => 2], merge: true);
+```
+
+---
 
 #### Navigate Convenience Methods
 
@@ -415,26 +485,26 @@ gale()->navigateMerge(['page' => 2]);
 // Navigate without merging (clean slate)
 gale()->navigateClean('/search?q=test');
 
-// Navigate with merging but preserve only specific params
+// Navigate preserving only specific params
 gale()->navigateOnly('/search', ['q']);
 
-// Navigate with merging but exclude specific params
+// Navigate preserving all except specific params
 gale()->navigateExcept('/search', ['page']);
 
 // Navigate using replaceState instead of pushState (no history entry)
-gale()->navigateReplace('/search');
+gale()->navigateReplace('/search?q=test');
 
-// Navigate using replaceState and merge with current params
+// Combine: replaceState + merge
 gale()->navigateMerge(['sort' => 'name'], options: ['replace' => true]);
 ```
 
-#### `navigateReplace(string|array $url, string $key = 'true', array $options = []): static`
-
-Navigate using `replaceState` instead of `pushState` (no history entry). The current URL in the browser's history is replaced without adding a new entry.
-
-```php
-gale()->navigateReplace('/search?q=test');
-```
+| Method | Signature |
+|--------|-----------|
+| `navigateMerge` | `navigateMerge(string\|array $url, string $key = 'true', array $options = []): static` |
+| `navigateClean` | `navigateClean(string\|array $url, string $key = 'true', array $options = []): static` |
+| `navigateOnly` | `navigateOnly(string\|array $url, array $only, string $key = 'true'): static` |
+| `navigateExcept` | `navigateExcept(string\|array $url, array $except, string $key = 'true'): static` |
+| `navigateReplace` | `navigateReplace(string\|array $url, string $key = 'true', array $options = []): static` |
 
 ---
 
@@ -451,7 +521,7 @@ gale()->updateQueries(['status' => 'active', 'page' => 1]);
 
 #### `clearQueries(array $paramNames, string $key = 'clear'): static`
 
-Remove specific query parameters from the current URL by navigating with null values for those params.
+Remove specific query parameters from the current URL by navigating with null values.
 
 ```php
 // Remove the 'search' and 'filter' params from the URL
@@ -474,9 +544,9 @@ return gale()->reload();
 
 #### `redirect(?string $url = null): GaleRedirect`
 
-Returns a `GaleRedirect` builder for full-page browser redirects. For Gale requests, the redirect is performed via `window.location.href`. For non-Gale requests, a standard HTTP redirect is returned.
+Returns a `GaleRedirect` builder for full-page browser redirects. For Gale requests, the redirect is performed via a `gale-redirect` event that triggers `window.location.href`. For non-Gale requests, a standard HTTP redirect is returned.
 
-**Returns** `GaleRedirect` (not chainable with `GaleResponse` — see [GaleRedirect](#galeredirect)).
+**Returns** `GaleRedirect` (not chainable with `GaleResponse` -- see [GaleRedirect](#galeredirect)).
 
 ```php
 // Direct URL
@@ -493,7 +563,18 @@ return gale()->redirect()->home();
 return gale()->redirect('/dashboard')->with('success', 'Profile updated!');
 ```
 
-> **Auto-conversion:** In `bootstrap/app.php`, Gale registers a `renderable` for `Illuminate\Http\RedirectResponse` that auto-converts bare `redirect()` calls to `gale()->redirect()` for Gale requests. You can use Laravel's standard `redirect()` helper and it will work reactively.
+> **Auto-conversion:** Gale registers middleware that auto-converts bare `redirect()` calls to `gale()->redirect()` for Gale requests. You can use Laravel's standard `redirect()` helper and it will work reactively.
+
+---
+
+#### `emitRedirect(string $url): static`
+
+Low-level method that emits a `gale-redirect` event for both HTTP (JSON) and SSE modes. Used internally by `GaleRedirect::toResponse()`. Prefer `redirect()` for application code.
+
+```php
+// Internal use -- prefer gale()->redirect() instead
+gale()->emitRedirect('/dashboard');
+```
 
 ---
 
@@ -506,7 +587,7 @@ Triggers a file download without navigating away from the page.
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `$pathOrContent` | `string` | Absolute path to file on disk, or raw content string |
-| `$filename` | `string` | Download filename shown to the user |
+| `$filename` | `string` | Download filename shown to the user (**required**) |
 | `$mimeType` | `string\|null` | MIME type (auto-detected from extension when `null`) |
 | `$isContent` | `bool` | `true` when first argument is raw content, not a path |
 
@@ -517,11 +598,13 @@ return gale()->download(storage_path('exports/report.pdf'), 'monthly-report.pdf'
 // Dynamic content
 return gale()->download($csvContent, 'export.csv', 'text/csv', isContent: true);
 
-// Chainable — download AND update state
+// Chainable -- download AND update state
 return gale()->download($path, 'report.pdf')->state(['lastExport' => now()->toISOString()]);
 ```
 
-> **How it works:** Gale stores the file in the cache with a signed token and returns a signed URL. The client fetches the URL via an invisible link and the file is served by `GaleDownloadServeController`. The page does not navigate.
+**How it works:** Gale stores the file in the cache with an HMAC-signed token (5-minute TTL) and emits a `gale-download` event with the signed URL. The client fetches the URL via an invisible link and the file is served by `GaleDownloadServeController` at `GET /gale/download/{token}`. The page does not navigate.
+
+Throws `\InvalidArgumentException` when a file path does not exist. Filenames are sanitized (path traversal characters stripped).
 
 ---
 
@@ -529,7 +612,7 @@ return gale()->download($path, 'report.pdf')->state(['lastExport' => now()->toIS
 
 #### `stream(Closure $callback): static`
 
-Switches the response to SSE mode and executes the callback in streaming context. Events sent inside the callback are flushed to the client immediately. Always uses `text/event-stream` regardless of `config('gale.mode')`.
+Switches the response to SSE mode and executes the callback in streaming context. Events sent inside the callback are flushed to the client immediately. **Always uses `text/event-stream`** regardless of `config('gale.mode')` or the `Gale-Mode` header.
 
 ```php
 return gale()->stream(function ($gale) {
@@ -543,7 +626,7 @@ return gale()->stream(function ($gale) {
 
 > **Always SSE:** `stream()` ignores `config('gale.mode')` and the `Gale-Mode` header. It always returns `text/event-stream`.
 
-> **dd() and dump():** Inside `stream()`, `dd()` and `dump()` output is captured and rendered as a full-page document replacement in the browser, matching the behavior of standard Gale requests.
+> **dd() and dump():** Inside `stream()`, when `config('gale.debug')` is true, `dump()` output is captured and sent as a `gale-debug-dump` event for the debug overlay. For `dd()` which calls `exit`, a shutdown handler captures the output. When `gale.debug` is false, dd/dump output replaces the full page as a document replacement.
 
 > **Exceptions:** Exceptions thrown inside the `stream()` callback emit a `gale-error` SSE event without replacing the page layout.
 
@@ -551,7 +634,7 @@ return gale()->stream(function ($gale) {
 
 #### `withEventId(string $id): static`
 
-Sets the SSE event ID for replay support (sent in `id:` lines). The browser sends this in `Last-Event-ID` when reconnecting.
+Sets the SSE event ID for replay support (sent in `id:` lines). The browser sends this in `Last-Event-ID` when reconnecting. Must be called **before** `state()`, `dispatch()`, etc., because events are formatted at queue time.
 
 ```php
 gale()->withEventId('event-' . $latestId);
@@ -561,7 +644,7 @@ gale()->withEventId('event-' . $latestId);
 
 #### `withRetry(int $milliseconds): static`
 
-Sets the SSE reconnection delay in milliseconds (default is 1000ms per the SSE spec).
+Sets the SSE reconnection delay in milliseconds (default is 1000ms per the SSE spec). Must be called **before** event methods.
 
 ```php
 gale()->withRetry(3000); // Reconnect after 3 seconds
@@ -578,6 +661,8 @@ gale()->push('notifications')->patchState(['count' => 5])->send();
 gale()->push('dashboard')->patchElements('#stats', $html)->send();
 ```
 
+Multiple channels can be pushed to by calling `push()` multiple times.
+
 ---
 
 ### Debug
@@ -587,15 +672,28 @@ gale()->push('dashboard')->patchElements('#stats', $html)->send();
 Sends data to the Gale Debug Panel's "Server Debug" tab. **No-op in production** (`APP_DEBUG=false`).
 
 ```php
-// One-argument form — label defaults to "debug"
+// One-argument form -- label defaults to "debug"
 gale()->debug($request->all());
 
-// Two-argument form — custom label
+// Two-argument form -- custom label
 gale()->debug('before validation', $request->all());
 gale()->debug('user model', $user);
 ```
 
-Supported data types: scalars, arrays, `Arrayable`, `JsonSerializable`, Eloquent models (via `toArray()`), Closures (as `'[Closure]'`), resources (as `'[Resource: type]'`), circular references (as `'[Circular]'`).
+Supported data types: scalars, arrays, `Arrayable`, `JsonSerializable`, Eloquent models (via `toArray()`), Closures (as `'[Closure]'`), resources (as `'[Resource: type]'`), circular references (truncated with `'[Circular]'`).
+
+In streaming mode, each `debug()` call emits a `gale-debug` SSE event immediately. In HTTP mode, all entries are batched into the JSON events array.
+
+---
+
+#### `debugDump(string $html): static`
+
+Injects VarDumper HTML output (from `dump()` or `dd()`) as a `gale-debug-dump` event for the debug overlay. Only active when `config('gale.debug')` is `true`. Called internally by `GaleDumpInterceptMiddleware` -- not typically used in application code.
+
+```php
+// Internal use by middleware:
+gale()->debugDump($capturedVarDumperHtml);
+```
 
 ---
 
@@ -604,7 +702,7 @@ Supported data types: scalars, arrays, `Arrayable`, `JsonSerializable`, Eloquent
 Forces HTTP/JSON mode (`application/json`) regardless of the `Gale-Mode` header or `config('gale.mode')`. Used by the validation exception renderer to ensure validation errors return as JSON even when the request was sent in SSE mode.
 
 ```php
-// In bootstrap/app.php renderable:
+// Used in bootstrap/app.php renderable:
 return gale()->messages($errors)->errors($allErrors)->forceHttp();
 ```
 
@@ -628,7 +726,7 @@ If the callback returns a `GaleRedirect`, it is stored and executed when `toResp
 
 #### `unless(mixed $condition, callable $callback, ?callable $fallback = null): static`
 
-Inverted `when()` — executes `$callback` when `$condition` is falsy.
+Inverted `when()` -- executes `$callback` when `$condition` is falsy.
 
 ---
 
@@ -651,19 +749,26 @@ Executes `$callback` only for non-Gale requests.
 
 ---
 
-#### `whenGaleNavigate(string|array|callable|null $key = null, ?callable $callback = null, ?callable $fallback = null): static`
+#### `whenGaleNavigate(string|array|callable|null $key, ?callable $callback, ?callable $fallback): static`
 
-Executes `$callback` when the request is a Gale navigate request. Optionally checks for a specific navigate key.
+Executes `$callback` when the request is a Gale navigate request. Optionally checks for a specific navigate key. When the first parameter is callable, treats the request as "any navigate".
 
 ```php
+// Any navigate request
+return gale()->whenGaleNavigate(fn($g) => $g->fragment('layout', 'content', $data));
+
+// Specific navigate key
 return gale()->whenGaleNavigate('sidebar', fn($g) => $g->fragment('layout', 'sidebar', $data));
+
+// Array of keys
+return gale()->whenGaleNavigate(['sidebar', 'content'], fn($g) => $g->view('layout', $data));
 ```
 
 ---
 
 #### `web(mixed $response): static`
 
-Sets the fallback response for non-Gale requests. This is only used when `toResponse()` is called on a non-Gale request and no web fallback was set via `view($view, $data, web: true)`.
+Sets the fallback response for non-Gale requests. When `toResponse()` is called on a non-Gale request with no web fallback, a `204 No Content` response is returned.
 
 ```php
 return gale()
@@ -671,13 +776,15 @@ return gale()
     ->web(view('counter', ['count' => $count]));
 ```
 
+Accepts any value that Laravel can convert to a response: Response objects, views, redirects, or closures.
+
 ---
 
 ### Hooks & Pipeline
 
 #### `GaleResponse::beforeRequest(Closure $hook): void` (static)
 
-Registers a before-hook that runs before every Gale controller action.
+Registers a before-hook that runs before every Gale controller action (via the `gale.pipeline` middleware).
 
 ```php
 // In AppServiceProvider::boot():
@@ -707,36 +814,57 @@ Clears all registered before and after hooks. Primarily used in tests.
 
 ---
 
+#### `GaleResponse::macro(string $name, object|callable $macro): void` (static)
+
+Registers a custom macro on `GaleResponse`. Throws `\RuntimeException` if the name conflicts with an existing method (unlike standard Macroable which silently shadows).
+
+```php
+GaleResponse::macro('toast', function (string $message, string $type = 'info') {
+    return $this->dispatch('show-toast', ['message' => $message, 'type' => $type]);
+});
+
+// Usage:
+return gale()->toast('Record saved!', 'success');
+```
+
+---
+
 #### `withHeaders(array $headers): static`
 
 Adds extra HTTP headers to the final response (both HTTP and SSE modes).
 
 ```php
 gale()->withHeaders(['Gale-Cache-Bust' => 'true']);
+gale()->withHeaders(['Cache-Control' => 'max-age=300']); // Overrides security header default
 ```
+
+When `Cache-Control` is set via `withHeaders()`, the security headers middleware will not override it.
 
 ---
 
 #### `etag(): static`
 
-Enables ETag-based conditional responses for this endpoint. When the client sends a matching `If-None-Match` header, returns `304 Not Modified`. Not applied to SSE streaming responses.
+Enables ETag-based conditional responses for this endpoint. When the client sends a matching `If-None-Match` header, returns `304 Not Modified`. Never applied to SSE streaming responses.
 
 ```php
 return gale()->etag()->fragment('products', 'list', $data);
 ```
 
+Can also be enabled globally via `config('gale.etag', true)`.
+
 ---
 
 ### Response Finalization
 
-#### `toResponse($request = null): JsonResponse|StreamedResponse`
+#### `toResponse($request = null): JsonResponse|StreamedResponse|mixed`
 
 Converts the accumulated events to an HTTP response. Called automatically when you `return` a `GaleResponse` from a controller (via the `Responsable` interface).
 
 **Mode resolution priority (highest to lowest):**
-1. `stream()` callback presence — always SSE
-2. `Gale-Mode` request header — per-request override
-3. `config('gale.mode')` — server-side default
+1. `stream()` callback presence -- always SSE
+2. `forceHttp()` -- always JSON
+3. `Gale-Mode` request header -- per-request override
+4. `config('gale.mode')` -- server-side default
 
 For non-Gale requests: returns the web fallback if set, otherwise `204 No Content`.
 
@@ -744,7 +872,7 @@ For non-Gale requests: returns the web fallback if set, otherwise `204 No Conten
 
 #### `toJson(): array`
 
-Returns the accumulated events as a PHP array (`{ events: [...] }`). Useful for testing or custom response building.
+Returns the accumulated events as a PHP array: `{ events: [...] }`. Useful for testing or custom response building. Does not reset the response state.
 
 ---
 
@@ -756,7 +884,27 @@ Returns the accumulated events as a JSON string.
 
 #### `reset(): void`
 
-Clears all accumulated state on the instance. Called automatically in `toResponse()` to prepare the scoped singleton for the next request.
+Clears all accumulated state on the instance (events, callbacks, headers, flags). Called automatically in `toResponse()` to prepare the scoped instance for the next request. Safe to call multiple times (idempotent).
+
+---
+
+### Static Utilities
+
+#### `GaleResponse::resolveMode(): string` (static)
+
+Returns the configured default response mode from `config('gale.mode')`. Falls back to `'http'` for invalid or missing values.
+
+---
+
+#### `GaleResponse::resolveRequestMode($request = null): string` (static)
+
+Returns the effective response mode for the current request. Checks the `Gale-Mode` header first, then falls back to `resolveMode()`.
+
+---
+
+#### `GaleResponse::headers(): array` (static)
+
+Returns the standard SSE headers array for streaming responses (`Content-Type: text/event-stream`, `Cache-Control: no-store`, etc.).
 
 ---
 
@@ -806,12 +954,17 @@ When you call `gale()->fragment('tasks.list', 'task-list', $data)`, Gale:
 
 1. Resolves the absolute path to `resources/views/tasks/list.blade.php`
 2. Reads the raw template text from disk (no PHP execution)
-3. Uses a regex to locate `@fragment('task-list')` ... `@endfragment`
-4. Extracts only that block of text
-5. Passes it to `Blade::render($fragmentText, $data)` for compilation
-6. Returns the rendered HTML
+3. Normalizes line endings (CRLF to LF) for consistent parsing
+4. Uses `BladeFragmentParser` to locate the `@fragment('task-list')` ... `@endfragment` boundaries
+5. Extracts the content between the directives (handles nesting correctly)
+6. Passes the extracted text to `Blade::render($fragmentText, $data)` for compilation
+7. Returns the rendered HTML
 
 The outer view (header, nav, other fragments) is **never compiled**. You only pass data that the fragment actually uses.
+
+### `BladeFragment::render(string $view, string $fragment, array $data = []): string`
+
+The static method on `BladeFragment` that performs extraction and rendering. Includes automatic cache recovery: if a Blade compilation error occurs (e.g., directives not yet registered), clears the view cache and retries.
 
 ### `View::renderFragment(string $view, string $fragment, array $data = []): string`
 
@@ -829,11 +982,11 @@ $html = View::renderFragment('tasks.list', 'task-list', ['tasks' => $tasks]);
 
 Place in the `<head>` section. Outputs:
 - `<meta name="csrf-token">` for CSRF protection
+- The Gale CSS stylesheet (`<link rel="stylesheet">`)
 - The Gale JS bundle (`<script type="module" src="...gale.js">`)
-- The Gale CSS stylesheet
 - Configuration globals (`GALE_DEBUG_MODE`, `GALE_SANITIZE_HTML`, `GALE_ALLOW_SCRIPTS`, `GALE_REDIRECT_CONFIG`)
 
-**Replaces** any Alpine.js CDN `<script>` tag — do not include both.
+**Replaces** any Alpine.js CDN `<script>` tag -- do not include both.
 
 ```blade
 <head>
@@ -847,13 +1000,13 @@ Place in the `<head>` section. Outputs:
 @gale(['nonce' => $nonce])
 ```
 
-The nonce is applied to all `<script>` tags output by `@gale` and to any `<script>` tags created by `gale()->js()` calls.
+The nonce is applied to all `<script>` tags output by `@gale` and exposed as `window.GALE_CSP_NONCE` for dynamic script tags created by `gale()->js()`.
 
 ---
 
 ### `@fragment('name')` / `@endfragment`
 
-Marks a named section for extraction by `gale()->fragment()`. These directives compile to empty strings — they are purely markers for the fragment parser.
+Marks a named section for extraction by `gale()->fragment()`. These directives compile to empty strings -- they are purely markers for the fragment parser.
 
 ```blade
 @fragment('user-card')
@@ -869,7 +1022,7 @@ Fragments can be nested, but each fragment name must be unique within a view.
 
 ### `@ifgale` / `@elsegale` / `@endifgale`
 
-Conditionally renders content based on whether the current request is a Gale request.
+Conditionally renders content based on whether the current request is a Gale request (has `Gale-Request` header).
 
 ```blade
 @ifgale
@@ -883,9 +1036,9 @@ Conditionally renders content based on whether the current request is a Gale req
 
 ---
 
-### `@galeState($data)`
+### `@galeState($data)` (deprecated)
 
-Injects initial state as a `window.galeState` global. Deprecated — prefer `x-data` with inline data instead.
+Injects initial state as a `window.galeState` global. Deprecated -- prefer `x-data` with inline data instead.
 
 ---
 
@@ -908,13 +1061,13 @@ return view('result', ['result' => $result]);
 
 #### `$request->galeMode(): string`
 
-Returns the resolved response mode (`'http'` or `'sse'`) for the current request. Reads the `Gale-Mode` header first, then falls back to `config('gale.mode')`.
+Returns the resolved response mode (`'http'` or `'sse'`) for the current request. Reads the `Gale-Mode` header first (case-insensitive), then falls back to `config('gale.mode')`.
 
 ---
 
 #### `$request->state(?string $key = null, mixed $default = null): mixed`
 
-Reads state values from the Gale request JSON body. Call without arguments to get all state.
+Reads state values from the Gale request JSON body. Call without arguments to get all state. Supports dot notation for nested keys.
 
 ```php
 $allState = $request->state();
@@ -926,7 +1079,7 @@ $nested = $request->state('user.name');
 
 #### `$request->isGaleNavigate(string|array|null $key = null): bool`
 
-Returns `true` when the request is a Gale navigate request (has `GALE-NAVIGATE` header). Optionally checks for a specific navigate key.
+Returns `true` when the request is a Gale navigate request (has `GALE-NAVIGATE` header). Optionally checks for a specific navigate key or array of keys.
 
 ```php
 if ($request->isGaleNavigate()) {
@@ -944,19 +1097,19 @@ if ($request->isGaleNavigate(['sidebar', 'content'])) {
 
 #### `$request->galeNavigateKey(): ?string`
 
-Returns the navigate key string from the `GALE-NAVIGATE-KEY` header, or `null`.
+Returns the raw navigate key string from the `GALE-NAVIGATE-KEY` header, or `null`.
 
 ---
 
 #### `$request->galeNavigateKeys(): array`
 
-Returns navigate keys as an array (comma-separated keys from the header).
+Returns navigate keys as an array (splits comma-separated keys from the header).
 
 ---
 
 #### `$request->validateState(array $rules, array $messages = [], array $attributes = []): array`
 
-Validates Alpine state from the request body using Gale's reactive validation. On failure, throws `GaleMessageException` which auto-sends validation messages to the frontend. On success, clears message fields that were validated.
+Validates Alpine state from the request body using Gale's reactive validation. On failure, throws `GaleMessageException` which auto-sends validation messages to the frontend with selective clearing (only clears message fields being validated). On success, returns validated data and clears messages for validated fields.
 
 ```php
 $validated = $request->validateState([
@@ -965,15 +1118,17 @@ $validated = $request->validateState([
 ]);
 ```
 
-> **Tip:** Prefer standard `$request->validate()` which is auto-converted by Gale's `ValidationException` renderer in `bootstrap/app.php`. Use `validateState()` for manual control of message clearing.
+> **Tip:** Prefer standard `$request->validate()` which is auto-converted by Gale's `ValidationException` renderer in `bootstrap/app.php`. Use `validateState()` for manual control of message clearing behavior.
 
 ---
 
 ## GaleRedirect
 
-`GaleRedirect` is returned by `gale()->redirect()`. It provides a fluent API for full-page browser redirects. For Gale requests, the redirect is performed by executing `window.location.href` in the browser. For non-Gale requests, a standard Laravel redirect response is returned.
+`GaleRedirect` is returned by `gale()->redirect()`. It provides a fluent API for full-page browser redirects with session flash data support. Implements `Responsable`, so you can return it directly from controllers.
 
-> **Security:** All redirect URLs are validated server-side against the `gale.redirect` config before being sent to the browser.
+For Gale requests, the redirect emits a `gale-redirect` event that the frontend handles via `window.location.href`. For non-Gale requests, a standard Laravel `RedirectResponse` is returned.
+
+> **Security:** All redirect URLs are validated server-side before being sent to the browser. Same-origin URLs are always allowed. External URLs must be in `gale.redirect.allowed_domains` or `allow_external` must be `true`. Dangerous protocols (`javascript:`, `data:`, `vbscript:`, `blob:`) are always blocked, even with `away()`.
 
 ### Methods
 
@@ -991,7 +1146,7 @@ return gale()->redirect()->to('/dashboard');
 
 #### `away(string $url): static`
 
-Sets the redirect URL for an external domain (bypasses domain-check logic of `back()`/`intended()`).
+Sets the redirect URL for an external domain. Bypasses same-domain validation but still blocks dangerous protocols.
 
 ```php
 return gale()->redirect()->away('https://stripe.com/checkout');
@@ -1001,7 +1156,7 @@ return gale()->redirect()->away('https://stripe.com/checkout');
 
 #### `route(string $routeName, array $parameters = [], bool $absolute = true): static`
 
-Sets the redirect URL using a named route.
+Sets the redirect URL using a named route. Throws `\InvalidArgumentException` if the route does not exist.
 
 ```php
 return gale()->redirect()->route('profile.show', ['user' => $user->id]);
@@ -1011,7 +1166,7 @@ return gale()->redirect()->route('profile.show', ['user' => $user->id]);
 
 #### `back(string $fallback = '/'): static`
 
-Sets the redirect URL to the previous URL with same-domain validation. Falls back to `$fallback` if the previous URL is external or unavailable.
+Sets the redirect URL to the previous URL with same-domain validation. Falls back to `$fallback` if the previous URL is external, unavailable, or matches the current URL.
 
 ---
 
@@ -1023,25 +1178,25 @@ Sets the redirect URL to the application root (`url('/')`).
 
 #### `intended(string $default = '/'): static`
 
-Sets the redirect URL to the session-stored intended URL (from auth middleware), with same-domain validation. Falls back to `$default`.
+Sets the redirect URL to the session-stored intended URL (from auth middleware), with same-domain validation. Falls back to `$default`. Pulls and removes the `url.intended` session key.
 
 ---
 
 #### `backOr(string $routeName, array $routeParameters = []): static`
 
-Redirects back if a previous URL is available, otherwise redirects to the named route.
+Redirects back if a valid previous URL is available, otherwise redirects to the named route.
 
 ---
 
 #### `refresh(bool $preserveQuery = true, bool $preserveFragment = false): static`
 
-Sets the redirect URL to the current URL (page refresh).
+Sets the redirect URL to the current URL (page refresh). When `$preserveQuery` is true, includes query parameters. When `$preserveFragment` is true, attempts to preserve the URL fragment from the HTTP referer.
 
 ---
 
 #### `with(string|array $key, mixed $value = null): static`
 
-Adds session flash data for the next request.
+Adds session flash data for the next request. Multiple calls accumulate.
 
 ```php
 return gale()->redirect()->route('dashboard')->with('success', 'Profile updated!');
@@ -1052,7 +1207,7 @@ return gale()->redirect()->back()->with(['status' => 'saved', 'count' => $count]
 
 #### `withInput(?array $input = null): static`
 
-Flashes the current request input to session (for repopulating forms).
+Flashes the current request input to session (for repopulating forms). Pass `null` to flash all current request input.
 
 ---
 
@@ -1064,22 +1219,22 @@ Flashes validation errors to session under the `errors` key.
 
 #### `forceReload(bool $forceReload = false): Response`
 
-**Returns** a final `Response` (not chainable). Executes `window.location.reload()` in the browser. When `$forceReload = true`, bypasses the browser cache.
+**Returns** a final `Response` (not chainable). Executes `window.location.reload()` in the browser. When `$forceReload = true`, bypasses the browser cache. For non-Gale requests, redirects to the current URL.
 
 ---
 
 #### `toResponse($request = null): Response`
 
-**Returns** a final `Response`. Validates the URL, flashes session data, and emits the redirect. Called automatically when you `return` a `GaleRedirect` from a controller.
+**Returns** a final `Response`. Validates the URL, flashes session data, and emits the redirect event. Called automatically when you `return` a `GaleRedirect` from a controller (via `Responsable`). Throws `\LogicException` if no URL has been set.
 
 ---
 
 ### Auto-Conversion of `redirect()`
 
-When Laravel's `redirect()` helper is used in a Gale request, Gale's middleware in `bootstrap/app.php` automatically converts the `RedirectResponse` to a `gale()->redirect()`. This means existing Laravel redirect patterns work reactively without changes:
+When Laravel's `redirect()` helper is used in a Gale request, Gale's `ConvertRedirectForGale` middleware automatically converts the `RedirectResponse` to a `gale()->redirect()->away($url)`. This means existing Laravel redirect patterns work reactively without changes:
 
 ```php
-// This works in Gale requests — auto-converted to reactive redirect:
+// This works in Gale requests -- auto-converted to reactive redirect:
 return redirect()->route('dashboard')->with('success', 'Done!');
 ```
 
@@ -1089,9 +1244,11 @@ return redirect()->route('dashboard')->with('success', 'Done!');
 
 Gale provides PHP 8 attributes for declarative route registration. To enable discovery, set `gale.route_discovery.enabled = true` in `config/gale.php` and add directories to `discover_controllers_in_directory`.
 
+All route discovery attributes live in `Dancycodes\Gale\Routing\Attributes`.
+
 ### `#[Route]`
 
-Defines route parameters on a controller class or method.
+Defines route parameters on a controller method (or class for defaults).
 
 ```php
 use Dancycodes\Gale\Routing\Attributes\Route;
@@ -1104,17 +1261,11 @@ public function index(): mixed
 
 // POST route
 #[Route(method: 'POST', name: 'tasks.store')]
-public function store(Request $request): mixed
-{
-    // ...
-}
+public function store(Request $request): mixed { /* ... */ }
 
 // Multiple HTTP methods
 #[Route(method: ['GET', 'HEAD'], uri: '/tasks/{task}')]
-public function show(Task $task): mixed
-{
-    // ...
-}
+public function show(Task $task): mixed { /* ... */ }
 ```
 
 **Parameters:**
@@ -1122,8 +1273,8 @@ public function show(Task $task): mixed
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `method` | `array\|string` | `[]` | HTTP methods (GET, POST, PUT, PATCH, DELETE, etc.) |
-| `uri` | `?string` | `null` | Custom URI; `null` = auto-generated |
-| `fullUri` | `?string` | `null` | Complete URI override bypassing transformers |
+| `uri` | `?string` | `null` | Custom URI; `null` = auto-generated from method name |
+| `fullUri` | `?string` | `null` | Complete URI override bypassing all transformers |
 | `name` | `?string` | `null` | Route name |
 | `middleware` | `array\|string` | `[]` | Middleware to apply |
 | `domain` | `?string` | `null` | Domain constraint |
@@ -1160,10 +1311,6 @@ class AdminController
 {
     public function index(): mixed { /* GET /admin, name: admin.index */ }
 }
-
-// All parameters are optional:
-#[Group(prefix: '/api/v1', middleware: ['auth:sanctum', 'throttle:60,1'], as: 'api.v1.')]
-class ApiController {}
 ```
 
 **Parameters:**
@@ -1179,7 +1326,7 @@ class ApiController {}
 
 ### `#[Middleware]`
 
-Applies middleware to a controller class (all routes) or a specific method. Repeatable — multiple `#[Middleware]` attributes stack.
+Applies middleware to a controller class (all routes) or a specific method. Repeatable -- multiple `#[Middleware]` attributes stack.
 
 ```php
 use Dancycodes\Gale\Routing\Attributes\Middleware;
@@ -1191,10 +1338,8 @@ class ProfileController
     #[Middleware('can:edit,profile')]    // This method only
     public function edit(): mixed {}
 }
-```
 
-Multiple middleware in one attribute:
-```php
+// Multiple middleware in one attribute:
 #[Middleware('auth', 'verified')]
 ```
 
@@ -1232,9 +1377,41 @@ public function show(int $id): mixed {}
 
 ---
 
+### `#[WithTrashed]`
+
+Includes soft-deleted models in route model binding. Can be applied to a class (all routes) or individual methods.
+
+```php
+use Dancycodes\Gale\Routing\Attributes\WithTrashed;
+
+#[WithTrashed]
+public function show(Task $task): mixed
+{
+    // $task may be a soft-deleted model
+}
+```
+
+---
+
+### `#[DoNotDiscover]`
+
+Prevents a controller class or method from being registered by route discovery. When applied to a class, all methods are excluded. When applied to a method, only that specific action is excluded.
+
+```php
+use Dancycodes\Gale\Routing\Attributes\DoNotDiscover;
+
+#[DoNotDiscover]
+class InternalController
+{
+    // No routes registered for any method
+}
+```
+
+---
+
 ### `#[NoAutoDiscovery]`
 
-Disables convention-based auto-discovery for a controller class. Explicit `#[Route]` attributes on methods still work.
+Disables convention-based auto-discovery for a controller class. Explicit `#[Route]` attributes on methods still work. Use this when you want granular control over which methods become routes.
 
 ```php
 use Dancycodes\Gale\Routing\Attributes\NoAutoDiscovery;
@@ -1267,7 +1444,7 @@ When `gale.route_discovery.conventions = true`, controllers with standard CRUD m
 | `update($model)` | PUT/PATCH | `/{prefix}/{model}` |
 | `destroy($model)` | DELETE | `/{prefix}/{model}` |
 
-Non-conventional public methods (e.g., `sendNotification`) are NOT registered unless they have `#[Route]`.
+Non-conventional public methods (e.g., `sendNotification`) are NOT registered unless they have `#[Route]`. Apply `#[NoAutoDiscovery]` to a class to disable conventions for that controller.
 
 ---
 
@@ -1291,8 +1468,13 @@ Gale registers the following middleware aliases. Apply them using `Route::middle
 
 | Alias | Class | Description |
 |-------|-------|-------------|
-| `gale.pipeline` | `GalePipelineMiddleware` | Main Gale request pipeline — runs before/after hooks |
+| `gale.pipeline` | `GalePipelineMiddleware` | Main Gale request pipeline -- runs before/after hooks |
+| `gale.checksum` | `VerifyGaleChecksum` | Verifies HMAC state checksum on Gale requests |
 | `gale.without-checksum` | `WithoutGaleChecksum` | Opt-out of state checksum verification for a specific route |
+| `gale.dump-intercept` | `GaleDumpInterceptMiddleware` | Captures dd()/dump() output for the debug overlay |
+| `gale.security-headers` | `AddGaleSecurityHeaders` | Adds configurable security headers to Gale responses |
+
+> **Note:** `gale.checksum` is registered as global web middleware via `bootstrap/app.php`. The alias is for explicit re-application on API routes or groups not covered by the web group.
 
 ---
 
@@ -1351,6 +1533,18 @@ When `true`, Gale injects HTML comment markers around conditional/loop Blade blo
 
 ---
 
+### `gale.etag`
+
+**Type:** `bool` | **Default:** `false` | **Env:** `GALE_ETAG`
+
+When `true`, all HTTP-mode Gale responses include an ETag header based on a content hash. If the client sends a matching `If-None-Match` header, the server returns `304 Not Modified`. Opt-in because non-idempotent endpoints with side effects should not serve 304. For granular control, use `gale()->etag()` per-endpoint instead. Never applied to SSE streaming responses.
+
+```php
+'etag' => env('GALE_ETAG', false),
+```
+
+---
+
 ### `gale.sanitize_html`
 
 **Type:** `bool` | **Default:** `true` | **Env:** `GALE_SANITIZE_HTML`
@@ -1387,7 +1581,7 @@ CSP nonce for `@gale` script tags and dynamic `gale()->js()` script tags.
 |-------|-------------|
 | `null` | No nonce (default) |
 | `'auto'` | Read `window.GALE_CSP_NONCE` at JS init time |
-| `'<string>'` | Static nonce value (uncommon — nonces should rotate) |
+| `'<string>'` | Static nonce value (uncommon -- nonces should rotate) |
 
 ```php
 'csp_nonce' => env('GALE_CSP_NONCE', null),
@@ -1441,12 +1635,12 @@ Security headers added automatically to all Gale responses.
 ],
 ```
 
-| Key | Default | Description |
-|-----|---------|-------------|
-| `x_content_type_options` | `'nosniff'` | Prevents MIME sniffing. Set to `false` to disable. |
-| `x_frame_options` | `'SAMEORIGIN'` | Clickjacking protection. Values: `'SAMEORIGIN'`, `'DENY'`, or `false`. |
-| `cache_control` | `'no-store, no-cache, must-revalidate'` | Prevents caching of state-bearing responses. SSE always uses `'no-cache'`. |
-| `custom` | `[]` | Additional headers added to all Gale responses. |
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `x_content_type_options` | `string\|false` | `'nosniff'` | Prevents MIME sniffing. Set to `false` to disable. |
+| `x_frame_options` | `string\|false` | `'SAMEORIGIN'` | Clickjacking protection. Values: `'SAMEORIGIN'`, `'DENY'`, or `false`. |
+| `cache_control` | `string\|false` | `'no-store, no-cache, must-revalidate'` | Prevents caching of state-bearing responses. SSE always uses `'no-cache'`. Set to `false` to disable. |
+| `custom` | `array` | `[]` | Additional headers added to all Gale responses. |
 
 ---
 
@@ -1478,9 +1672,11 @@ Security headers added automatically to all Gale responses.
 
 ---
 
-### `gale.redirect_allowed_domains`
+### `gale.redirect_allowed_domains` (deprecated)
 
-**Deprecated.** Use `gale.redirect.allowed_domains` instead. Kept for backward compatibility with Gale v1.
+**Type:** `array` | **Default:** `[]`
+
+Deprecated. Use `gale.redirect.allowed_domains` instead. Kept for backward compatibility.
 
 ---
 
