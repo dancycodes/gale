@@ -30,7 +30,7 @@ Before diving into individual concepts, understand the full flow from button cli
 │  public function increment(Request $request)                    │
 │  {                                                              │
 │      $count = $request->state('count') + 1;                    │
-│      return gale()->patchState(['count' => $count]);            │
+│      return gale()->state(['count' => $count]);                 │
 │  }                                                              │
 └───────────────────────┬─────────────────────────────────────────┘
                         │
@@ -155,9 +155,9 @@ Alpine.gale.configure({ defaultMode: 'sse' });
 **Always SSE (streaming):**
 ```php
 return gale()->stream(function ($gale) {
-    $gale->patchState(['progress' => 50]);
+    $gale->state(['progress' => 50]);
     sleep(1);
-    $gale->patchState(['progress' => 100, 'done' => true]);
+    $gale->state(['progress' => 100, 'done' => true]);
 });
 ```
 
@@ -190,7 +190,7 @@ public function increment(Request $request): GaleResponse
     $count = $request->state('count');   // reads from POST body
     $name  = $request->state('name');   // reads from POST body
 
-    return gale()->patchState([
+    return gale()->state([
         'count' => $count + 1,          // updates count in Alpine
         // name is not included — unchanged (RFC 7386 semantics)
     ]);
@@ -336,10 +336,10 @@ behavior:
 
 **Server API:**
 ```php
-gale()->patchElements('<div id="counter">4</div>');              // outer (default, ID-matched)
-gale()->patchElements('<li>New Item</li>', selector: '#list', mode: 'append');
+gale()->html('<div id="counter">4</div>');                       // outer (default, ID-matched)
+gale()->append('#list', '<li>New Item</li>');                    // append to list
 gale()->remove('#notification-5');                               // remove
-gale()->outerMorph('#product-form', view(...));                  // client-state preserved
+gale()->outerMorph('#product-form', view('products.form', $data)->render()); // client-state preserved
 ```
 
 ### Choosing the Right Mode
@@ -477,7 +477,7 @@ public function update(Request $request): GaleResponse
     $user = User::find($request->state('userId'));
     $user->update(['name' => $request->state('name')]);
 
-    return gale()->patchState(['saved' => true, 'name' => $user->name]);
+    return gale()->state(['saved' => true, 'name' => $user->name]);
 }
 
 // CORRECT: Works for both Gale and non-Gale (direct URL) requests
@@ -566,7 +566,7 @@ public function store(Request $request): GaleResponse
     // ^ If validation fails, a ValidationException is thrown
 
     User::create($validated);
-    return gale()->patchState(['saved' => true]);
+    return gale()->state(['saved' => true]);
 }
 
 // ...is automatically converted to the equivalent of:
@@ -601,8 +601,8 @@ conditional logic needed in your template.
 ### redirect() → Reactive Navigation
 
 When a controller returns a `redirect()` during a Gale request, the `ConvertRedirectForGale`
-middleware automatically converts it to a `gale-execute-script` event that sets
-`window.location.href`:
+middleware automatically converts it to a `gale-redirect` event that triggers client-side
+navigation:
 
 ```php
 // Standard redirect in a controller that handles both Gale and non-Gale:
@@ -718,7 +718,7 @@ class ProductController extends Controller
         // Update the results list in the DOM
         return gale()
             ->fragment('products.index', 'results', compact('products'))
-            ->patchState(['total' => $products->total()]);
+            ->state('total', $products->total());
     }
 
     private function buildFragmentResponse(Request $request): GaleResponse
@@ -807,5 +807,5 @@ This example demonstrates:
 - Read [Backend API Reference](backend-api.md) for the complete `gale()` method catalog
 - Read [Frontend API Reference](frontend-api.md) for all Alpine Gale magics and directives
 - Read [Navigation & SPA Guide](navigation.md) for SPA navigation patterns and history management
-- Read [Forms, Validation & Uploads Guide](forms.md) for complex form patterns
-- Read [Debug & Troubleshooting Guide](debug.md) when something doesn't work as expected
+- Read [Forms, Validation & Uploads Guide](forms-validation-uploads.md) for complex form patterns
+- Read [Debug & Troubleshooting Guide](debug-troubleshooting.md) when something doesn't work as expected
