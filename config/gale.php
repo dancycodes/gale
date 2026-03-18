@@ -167,6 +167,23 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Debug Panel (F-071)
+    |--------------------------------------------------------------------------
+    |
+    | Controls the Gale debug panel independently from APP_DEBUG.
+    |
+    | null  — fall back to APP_DEBUG (default, no breaking change)
+    | true  — force debug panel ON even if APP_DEBUG=false
+    | false — force debug panel OFF even if APP_DEBUG=true
+    |
+    | Type: bool|null | Default: null | Env: GALE_DEBUG_PANEL
+    |
+    */
+
+    'debug_panel' => env('GALE_DEBUG_PANEL', null),
+
+    /*
+    |--------------------------------------------------------------------------
     | ETag Conditional Responses (F-027)
     |--------------------------------------------------------------------------
     |

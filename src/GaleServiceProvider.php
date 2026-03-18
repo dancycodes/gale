@@ -176,7 +176,8 @@ class GaleServiceProvider extends ServiceProvider
     \$__galeNonceScript = \$__galeNonce
         ? '<script' . \$__galeNonceAttr . '>window.GALE_CSP_NONCE=' . json_encode(\$__galeNonce) . ';</script>' . chr(10)
         : '';
-    \$__galeDebugScript = config('app.debug')
+    \$__galeDebugPanel = config('gale.debug_panel') ?? config('app.debug');
+    \$__galeDebugScript = \$__galeDebugPanel
         ? '<script' . \$__galeNonceAttr . '>window.GALE_DEBUG_MODE=true;</script>' . chr(10)
         : '';
     // F-014: Inject XSS sanitization config flags for alpine-gale to read at init time.
